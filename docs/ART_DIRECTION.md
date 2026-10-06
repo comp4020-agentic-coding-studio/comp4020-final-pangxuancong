@@ -1,74 +1,62 @@
 # Art direction
 
-> A tiny impossible machine on a designer's desk.
+> A tiny impossible obstacle course on a designer's desk.
 
-Keywords:
+A handcrafted tabletop toy world. Not a dashboard, not a neon multiplayer game.
 
-```text
-warm
-tactile
-crafted
-small
-mechanical
-quiet
-legible
-playful but not childish
-```
+Keywords: warm, crafted, tactile, toy-like, quiet, playful, legible,
+editorial, small, physical.
 
-Rejected:
-
-```text
-cyberpunk
-dashboard
-neon
-casino
-arcade explosion
-glassmorphism
-social feed
-generic SaaS
-realistic factory
-```
+Rejected: cyberpunk, neon, esports HUD, generic SaaS, glassmorphism, busy
+inventory UI, casino reward visuals, gore.
 
 Every major visual addition is checked against: **does this still look like a
-tiny designed machine on a desk?** If not, simplify it.
+tiny obstacle course on a desk?** If not, simplify it.
 
 ## References
 
-Conceptual references, never assets to copy: *Assemble with Care* (tactile
-objects), *Monument Valley* (restraint, generous space), *The Incredible
-Machine* (readable mechanical objects), Rube Goldberg machines (visible
-causality).
+Conceptual only, never assets to copy: *Assemble with Care* (tactile crafted
+objects), *Monument Valley* (restraint, negative space), *Ultimate Chicken
+Horse* (readable multiplayer obstacle placement), tabletop toys and wooden
+construction sets (physical clarity).
 
 ## Palette
 
-Tokens live in `public/styles.css`: warm paper background, charcoal ink, wood
-and brass for the machine, muted red for a break, muted green for success,
-soft blue for the ball. No gradients, glows or neon.
+Warm cream / off-white background; wood or muted neutral base geometry;
+placed items in distinct muted colours with strong silhouettes:
+
+| Item | Colour |
+|---|---|
+| Platform | warm wood |
+| Spring | mustard / brass |
+| Spike | muted dark red |
+| Fan | soft blue |
+| Moving Platform | muted green |
+| Bomb | charcoal body, small warm accent |
+
+Existing tokens live in `public/styles.css` (paper, ink, wood, brass, red,
+green, blue). No gradients, glows or neon.
+
+## Players
+
+Small, simple wooden or paper-like figures, told apart by a colour accent. No
+large avatars or profile cards. Readable when several share a spot; overlap is
+fine since players pass through each other.
 
 ## Composition
 
-The machine takes most of the viewport. Controls sit below it, small and
-contextual. No sidebars, stat cards or player lists.
+The level takes most of the viewport. The Parts Tray is secondary: a small box
+of physical pieces that look draggable, with a small hover lift. No large app
+cards, sidebars of stats or player lists.
 
-## Mechanisms
+## Build preview
 
-Objects stay recognisable: a ramp is a plank, dominoes are upright blocks, a
-spring is a coil, a fan has blades, a gate has two posts. Stylise, never
-abstract.
+The piece lifts slightly; a valid spot gets a subtle positive outline; an
+invalid one restrained warning feedback; protected START/GOAL areas appear
+only while relevant. No permanent editor grid.
 
-## Motion
+## Death and goal
 
-- Parameter changes: short tactile responses (150–300 ms). Motion belongs to
-  mechanisms, not to interface chrome.
-- A run is a sequence: causality travels left to right and the eye follows it.
-- Failure: the motion shows the break first (the ball falls short, bounces,
-  rests). Words come only after it settles. Never a modal over the machine.
-- Success: restrained. A small pulse or chime, "Chain complete".
-- `prefers-reduced-motion`: jump to the final state.
-
-## Sound (planned)
-
-Material vocabulary: release click, rolling texture, wood taps, restrained
-boing, soft air, mechanical clack, small bell. No background music. Starts
-only after a user gesture; always has a mute control. Any external audio
-asset needs a licence, recorded here.
+Death: a small dust puff, quick squash or fade, optionally a tiny trace mark.
+Readable, light, no gore. The flag is obvious without dominating; reaching it
+is satisfying but restrained.
