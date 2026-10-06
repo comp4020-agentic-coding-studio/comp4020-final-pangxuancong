@@ -1,0 +1,17 @@
+{
+  "project": "Chain Reaction",
+  "statuses": ["planned", "in_progress", "implemented", "verified", "blocked"],
+  "features": [
+    { "id": "F01", "name": "Persistent machine state", "status": "verified", "priority": "core" },
+    { "id": "F02", "name": "Single mechanism proof-of-life", "status": "verified", "priority": "crit-8" },
+    { "id": "F03", "name": "Full fixed chain visual", "status": "planned", "priority": "core" },
+    { "id": "F04", "name": "Anonymous visitor identity", "status": "planned", "priority": "core" },
+    { "id": "F05", "name": "Mechanism claim and ownership", "status": "planned", "priority": "core" },
+    { "id": "F06", "name": "Realtime mechanism updates", "status": "planned", "priority": "crit-9" },
+    { "id": "F07", "name": "Deterministic shared run", "status": "planned", "priority": "core" },
+    { "id": "F08", "name": "Failure-point feedback", "status": "planned", "priority": "core" },
+    { "id": "F09", "name": "Tactile mechanism animation", "status": "planned", "priority": "polish" },
+    { "id": "F10", "name": "Mechanical sound design", "status": "planned", "priority": "polish" },
+    { "id": "F11", "name": "Server-side activity logging", "status": "planned", "priority": "crit-10" }
+  ]
+}
