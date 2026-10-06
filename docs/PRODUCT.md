@@ -50,6 +50,8 @@ consequences beat a large inventory of weak ones.
 - **P8 Presence through the level.** Other people are felt by seeing them run
   and seeing their placements land. No chat box.
 - **P9 Tactile, restrained presentation** (`docs/ART_DIRECTION.md`).
+- **P10 Small rooms.** At most four players build and run; more watch and
+  rotate in. Four keeps the level readable and every piece attributable.
 
 ## Traceability
 
@@ -63,7 +65,8 @@ consequences beat a large inventory of weak ones.
 | Only technical validity is enforced | START/GOAL protected; no path checks | yes (S6) | no |
 | Items are neither good nor bad | same object can help or hurt | no | yes |
 | Challenge is the level | forgiving wall movement | rule only (unit test) | yes |
-| No winners | no score, ranking or points for FINISHED | no | yes |
+| Scores stay inside one game | +1 finish, +0.2 per other player killed by your spike; reset every game; no all-time board | yes (S7) | yes |
+| A finished level can live on | archive (continue on a copy) or restart, by vote | yes (S8) | yes |
 
 ## Priority order
 
@@ -80,7 +83,7 @@ When goals conflict:
 ## Out of scope
 
 Unless the human explicitly changes the product: chat, direct messages,
-accounts, profiles, likes, leaderboards, scores, XP, achievements, multiple
+accounts, profiles, likes, all-time leaderboards, XP, achievements, multiple
 rooms, matchmaking, stores, cosmetics, AI features, unlimited level-editor
 tools, hundreds of object types, realistic physics simulation, ranked play,
 player-player collision.

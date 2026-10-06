@@ -15,6 +15,12 @@ alive, and it starts another server on the next file change. Start it in its
 own process group (`setsid pnpm dev &`) and kill the group. `pnpm dev`
 watches only `src/server` and `src/shared`; Vite reloads the client itself.
 
+Browser or spec runs that play rounds change the level and the round. Run
+them against a second server with its own data, never against a `pnpm dev`
+someone is looking at: `DATA_DIR=/tmp/x PORT=8092 node src/server/main.ts`,
+then `APP_URL=http://localhost:8092 pnpm check`. A real person's open tab is
+also a player, and holds BUILD until they act or the AFK limit passes.
+
 ## Checks
 
 | Id | Check | Protects | Status |
@@ -26,9 +32,12 @@ watches only `src/server` and `src/shared`; Vite reloads the client itself.
 | S4 | A FINISHED + B DEAD → next BUILD; A FINISHED + B RUNNING → still RUN | rounds progress without timers | `spec/rounds.test.ts` (+ run idle limit, six rounds then a fresh level) |
 | S5 | Bomb on a placed item: removed, removal persists, action consumed. Bomb on START, GOAL, base geometry: rejected | deadlock is recoverable (P4) | rules: `spec/level.test.ts`; server: `spec/realtime.test.ts` |
 | S6 | placement inside START or over GOAL rejected; a legal one accepted. Never test completability | only technical validity (P3) | `spec/level.test.ts` |
+| S7 | +1 for finishing, +0.2 to the placer for each other player killed on their spike, nothing for your own spike; scores reset per game | scores stay inside one game | `spec/rounds.test.ts` |
+| S8 | after round 6: majority vote, tie or timeout archives; archive copies the items into the next game, restart starts bare | a finished level can live on | `spec/rounds.test.ts` (vote); copy checked in the browser (2026-10-06) |
+| S9 | a fifth player spectates and takes a free seat at the next BUILD | small rooms (P10) | `spec/rounds.test.ts` |
 | — | wall jump allowed while touching and within the grace window; kicks away, mostly up when pressing in | forgiving movement (P6) | `spec/level.test.ts` |
 
-S3 and S4 test the pure round state machine with explicit times.
+S3, S4, S7–S9 test the pure round state machine and scoring with explicit times.
 `spec/realtime.test.ts` connects two real clients and needs the server to
 reach a BUILD within 30 s: run it with nobody else mid-round. Persistence
 across a server restart was checked by hand (2026-10-06).

@@ -4,14 +4,16 @@
 // passed in.
 
 export const MAX_ROUNDS = 6;
+export const MAX_PLAYERS = 4;
 export const COUNTDOWN_MS = 3000;
 export const RESULTS_MS = 3500;
-export const LEVEL_DONE_MS = 7000; // results after round 6, when the level is finished
+export const VOTE_MS = 30_000; // LEVEL_END: archive or restart
 export const BUILD_IDLE_MS = 40_000; // no build activity: auto-skip
 export const BUILD_MAX_MS = 120_000; // nobody is left waiting after this
 export const RUN_IDLE_MS = 30_000; // a character that has not moved: out
 
-export type Phase = "BUILD" | "COUNTDOWN" | "RUN" | "RESULTS";
+export type Phase = "BUILD" | "COUNTDOWN" | "RUN" | "RESULTS" | "LEVEL_END";
+export type Vote = "ARCHIVE" | "RESTART";
 export type BuildState = "WAITING" | "PLACED" | "SKIPPED" | "DISCONNECTED";
 export type RunState = "RUNNING" | "DEAD" | "FINISHED" | "DISCONNECTED";
 
@@ -23,12 +25,14 @@ export interface Player {
   build: BuildState;
   run: RunState | null; // null until the roster closes
   lastActivityAt: number; // build activity, or character movement during RUN
+  joinedAt: number; // seats go in order of arrival
+  vote: Vote | null; // LEVEL_END only
 }
 
 export interface RoundState {
   phase: Phase;
   phaseStartedAt: number;
-  phaseEndsAt: number | null; // COUNTDOWN and RESULTS only
+  phaseEndsAt: number | null; // COUNTDOWN, RESULTS and LEVEL_END
   round: number; // 1..MAX_ROUNDS
   players: Player[];
 }
@@ -37,7 +41,9 @@ export type Transition =
   | { to: "COUNTDOWN" }
   | { to: "RUN" }
   | { to: "RESULTS"; levelDone: boolean }
-  | { to: "BUILD"; newLevel: boolean };
+  | { to: "LEVEL_END" }
+  | { to: "BUILD"; newLevel: false }
+  | { to: "BUILD"; newLevel: true; archive: boolean };
 
 export const newRoundState = (round: number, now: number): RoundState => ({
   phase: "BUILD",
@@ -49,19 +55,22 @@ export const newRoundState = (round: number, now: number): RoundState => ({
 
 export const activePlayers = (s: RoundState): Player[] => s.players.filter((p) => p.active);
 const find = (s: RoundState, id: string): Player | undefined => s.players.find((p) => p.id === id);
+const seatsTaken = (s: RoundState): number => s.players.filter((p) => p.active && p.connected).length;
 
 export function join(s: RoundState, id: string, name: string, now: number): Player {
   // the first person into an empty BUILD gets the whole build window
   if (s.phase === "BUILD" && !s.players.some((q) => q.active && q.connected)) s.phaseStartedAt = now;
   let p = find(s, id);
   if (!p) {
-    p = { id, name, connected: true, active: false, build: "WAITING", run: null, lastActivityAt: now };
+    p = { id, name, connected: false, active: false, build: "WAITING", run: null, lastActivityAt: now, joinedAt: now, vote: null };
     s.players.push(p);
   }
+  // the roster is open during BUILD while a seat is free; a returning player
+  // who had not acted waits again
+  const seat = seatsTaken(s) < MAX_PLAYERS || (p.active && p.build !== "DISCONNECTED");
   p.connected = true;
   p.name = name;
-  // the roster is open during BUILD; a returning player who had not acted waits again
-  if (s.phase === "BUILD") {
+  if (s.phase === "BUILD" && seat) {
     if (!p.active || p.build === "DISCONNECTED") {
       p.active = true;
       p.build = "WAITING";
@@ -104,6 +113,20 @@ export function moved(s: RoundState, id: string, now: number): void {
   const p = find(s, id);
   if (p && s.phase === "RUN" && p.run === "RUNNING") p.lastActivityAt = now;
 }
+
+export function vote(s: RoundState, id: string, v: Vote): boolean {
+  const p = find(s, id);
+  if (s.phase !== "LEVEL_END" || !p?.connected || (v !== "ARCHIVE" && v !== "RESTART")) return false;
+  p.vote = v;
+  return true;
+}
+
+// Majority of the votes cast; a tie, or nobody voting, archives.
+export const voteResult = (s: RoundState): Vote => {
+  const archive = s.players.filter((p) => p.vote === "ARCHIVE").length;
+  const restart = s.players.filter((p) => p.vote === "RESTART").length;
+  return restart > archive ? "RESTART" : "ARCHIVE";
+};
 
 export function report(s: RoundState, id: string, result: "DEAD" | "FINISHED"): boolean {
   const p = find(s, id);
@@ -157,29 +180,46 @@ export function tick(s: RoundState, now: number): Transition | null {
       const levelDone = s.round >= MAX_ROUNDS;
       s.phase = "RESULTS";
       s.phaseStartedAt = now;
-      s.phaseEndsAt = now + (levelDone ? LEVEL_DONE_MS : RESULTS_MS);
+      s.phaseEndsAt = now + RESULTS_MS;
       return { to: "RESULTS", levelDone };
     }
     case "RESULTS": {
       if (now < s.phaseEndsAt!) return null;
-      const newLevel = s.round >= MAX_ROUNDS;
-      s.round = newLevel ? 1 : s.round + 1;
+      if (s.round >= MAX_ROUNDS) {
+        s.phase = "LEVEL_END";
+        s.phaseStartedAt = now;
+        s.phaseEndsAt = now + VOTE_MS;
+        for (const p of s.players) p.vote = null;
+        return { to: "LEVEL_END" };
+      }
+      s.round += 1;
       startBuild(s, now);
-      return { to: "BUILD", newLevel };
+      return { to: "BUILD", newLevel: false };
+    }
+    case "LEVEL_END": {
+      const voters = s.players.filter((p) => p.connected);
+      const allIn = voters.length > 0 && voters.every((p) => p.vote !== null);
+      if (!allIn && now < s.phaseEndsAt!) return null;
+      const archive = voteResult(s) === "ARCHIVE";
+      s.round = 1;
+      startBuild(s, now);
+      return { to: "BUILD", newLevel: true, archive };
     }
   }
 }
 
-// A fresh BUILD: everyone connected is on the roster, nobody has acted.
+// A fresh BUILD: the first four connected players, in order of arrival, are
+// on the roster and nobody has acted; anyone else watches.
 function startBuild(s: RoundState, now: number): void {
   s.phase = "BUILD";
   s.phaseStartedAt = now;
   s.phaseEndsAt = null;
-  s.players = s.players.filter((p) => p.connected);
-  for (const p of s.players) {
-    p.active = true;
+  s.players = s.players.filter((p) => p.connected).sort((a, b) => a.joinedAt - b.joinedAt);
+  s.players.forEach((p, i) => {
+    p.active = i < MAX_PLAYERS;
     p.build = "WAITING";
     p.run = null;
+    p.vote = null;
     p.lastActivityAt = now;
-  }
+  });
 }

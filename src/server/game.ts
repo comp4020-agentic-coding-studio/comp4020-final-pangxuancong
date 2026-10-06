@@ -3,10 +3,13 @@ import type { Server, Socket } from "socket.io";
 import { type Item, demolitionError, placementError } from "../shared/level.ts";
 import type { ClientToServer, Handshake, PlayerView, ServerToClient, Snapshot } from "../shared/protocol.ts";
 import {
-  BUILD_IDLE_MS, BUILD_MAX_MS, MAX_ROUNDS, type RoundState,
-  act, canBuild, join, leave, moved, newRoundState, report, tick, touchBuild,
+  BUILD_IDLE_MS, BUILD_MAX_MS, MAX_PLAYERS, MAX_ROUNDS, type RoundState,
+  act, canBuild, join, leave, moved, newRoundState, report, tick, touchBuild, vote,
 } from "../shared/rounds.ts";
-import { currentLevel, destroyItem, finishLevel, insertItem, readItems, setRound, startLevel } from "./db.ts";
+import { type ScoreEvent, killCredit, tally } from "../shared/score.ts";
+import {
+  currentLevel, destroyItem, finishLevel, insertItem, insertScoreEvent, readItems, readScoreEvents, setRound, startLevel,
+} from "./db.ts";
 
 // The server's half of the game: the round state machine on a clock, the level
 // in SQLite, and the sockets. It owns phase, roster, build actions, statuses
@@ -24,6 +27,7 @@ const ADJECTIVES = ["Quiet", "Blue", "Paper", "Small", "Brave", "Amber", "Swift"
 export function createGame(io: Server<ClientToServer, ServerToClient>): { levelState: () => { levelId: number; round: number; items: Item[] } } {
   let level = currentLevel();
   let items = readItems(level.id);
+  let scoreEvents: ScoreEvent[] = readScoreEvents(level.id);
   // after a restart the level reloads and the session safely returns to BUILD
   const state: RoundState = newRoundState(level.round, Date.now());
   let levelDone = false;
@@ -50,17 +54,32 @@ export function createGame(io: Server<ClientToServer, ServerToClient>): { levelS
 
   const snapshotFor = (playerId: string | null, now: number): Snapshot => {
     const me = state.players.find((p) => p.id === playerId);
+    const totals = tally(scoreEvents);
+    const thisRound = tally(scoreEvents, state.round);
     return {
       levelId: level.id,
       round: state.round,
       maxRounds: MAX_ROUNDS,
       phase: state.phase,
       phaseRemainingMs: state.phaseEndsAt === null ? null : Math.max(0, state.phaseEndsAt - now),
+      phaseElapsedMs: now - state.phaseStartedAt,
       buildDeadlineMs: me ? snapshotDeadline(me, now) : null,
       levelDone,
+      maxPlayers: MAX_PLAYERS,
       players: state.players.map(
-        (p): PlayerView => ({ id: p.id, name: p.name, colour: colourOf(p.id), connected: p.connected, active: p.active, build: p.build, run: p.run }),
+        (p): PlayerView => ({
+          id: p.id, name: p.name, colour: colourOf(p.id), connected: p.connected, active: p.active, build: p.build, run: p.run,
+          points: totals.get(p.id)?.points ?? 0, gained: thisRound.get(p.id)?.points ?? 0, vote: p.vote,
+        }),
       ),
+      // everyone who scored, plus everyone playing now, even on zero
+      scores: [
+        ...totals.values(),
+        ...state.players.filter((p) => p.active && !totals.has(p.id)).map((p) => ({ playerId: p.id, name: p.name, points: 0, finishes: 0, kills: 0 })),
+      ]
+        .map((t) => ({ ...t, colour: colourOf(t.playerId) }))
+        .sort((a, b) => b.points - a.points || a.name.localeCompare(b.name)),
+      archivedFrom: level.parentId,
       items,
       traces: state.phase === "BUILD" ? traces : [],
     };
@@ -74,7 +93,7 @@ export function createGame(io: Server<ClientToServer, ServerToClient>): { levelS
 
   // Timeouts can change build or run states inside tick() without a phase
   // transition, so compare what a snapshot would show before and after.
-  const signature = (): string => JSON.stringify(state.players.map((p) => [p.id, p.build, p.run, p.connected, p.active]));
+  const signature = (): string => JSON.stringify(state.players.map((p) => [p.id, p.build, p.run, p.connected, p.active, p.vote]));
   let lastDeadlineBroadcast = 0;
   setInterval(() => {
     const now = Date.now();
@@ -87,9 +106,11 @@ export function createGame(io: Server<ClientToServer, ServerToClient>): { levelS
     }
     if (t?.to === "BUILD") {
       if (t.newLevel) {
-        finishLevel(level.id);
-        level = startLevel();
-        items = [];
+        // archive: keep building on a copy of this level; restart: bare
+        finishLevel(level.id, t.archive ? "archived" : "restarted");
+        level = startLevel(t.archive ? level.id : null);
+        items = readItems(level.id);
+        scoreEvents = [];
         traces = [];
       } else {
         setRound(level.id, state.round);
@@ -126,7 +147,10 @@ export function createGame(io: Server<ClientToServer, ServerToClient>): { levelS
       if (!canBuild(state, id)) return ack({ ok: false, error: "you have already built this round" });
       const error = placementError(items, proposal);
       if (error) return ack({ ok: false, error });
-      const item: Item = { id: randomUUID(), type: proposal.type, col: proposal.col, row: proposal.row, rot: proposal.rot, createdBy: display, createdRound: state.round };
+      const item: Item = {
+        id: randomUUID(), type: proposal.type, col: proposal.col, row: proposal.row, rot: proposal.rot,
+        createdBy: display, createdById: id, createdRound: state.round,
+      };
       insertItem(level.id, item);
       items = [...items, item];
       act(state, id, "PLACED");
@@ -170,7 +194,19 @@ export function createGame(io: Server<ClientToServer, ServerToClient>): { levelS
       if (!p || (p.result !== "DEAD" && p.result !== "FINISHED")) return;
       if (!report(state, id, p.result)) return;
       if (p.result === "DEAD" && Number.isFinite(p.x) && Number.isFinite(p.y)) nextTraces.push({ x: Math.round(p.x), y: Math.round(p.y) });
+      // +1 for the flag; +0.2 to whoever placed the spike that killed someone else
+      const scorer = p.result === "FINISHED" ? id : killCredit(id, items.find((i) => i.id === p.by));
+      if (scorer) {
+        const name = state.players.find((q) => q.id === scorer)?.name ?? items.find((i) => i.createdById === scorer)?.createdBy ?? "someone";
+        const e: ScoreEvent = { round: state.round, playerId: scorer, name, kind: p.result === "FINISHED" ? "finish" : "kill" };
+        scoreEvents.push(e);
+        insertScoreEvent(level.id, e);
+      }
       broadcast();
+    });
+
+    socket.on("level:vote", (v) => {
+      if (vote(state, id, v)) broadcast();
     });
 
     socket.on("disconnect", () => {

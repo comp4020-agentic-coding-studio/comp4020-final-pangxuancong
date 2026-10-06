@@ -4,12 +4,12 @@
 // file never decides a phase, a placement or an outcome.
 import Phaser from "phaser";
 import { io, type Socket } from "socket.io-client";
-import { HEIGHT, WIDTH, type BuildChoice } from "../shared/level.ts";
+import { HEIGHT, ROTATIONS, WIDTH, type BuildChoice } from "../shared/level.ts";
 import { MOVEMENT } from "../shared/movement.ts";
 import type { ClientToServer, ServerToClient } from "../shared/protocol.ts";
 import { LevelScene } from "./scene.ts";
 import { bus, emptySelection, iCanBuild, store } from "./state.ts";
-import { buildTray, buttons, render, renderPhase, say, snapshotArrived } from "./ui.ts";
+import { PIECES, buildTray, buttons, onVote, render, renderPhase, say, snapshotArrived } from "./ui.ts";
 
 // One player per tab: a refresh keeps who you are, a second tab is someone new
 // (docs/MULTIPLAYER.md).
@@ -51,7 +51,8 @@ socket.on("snapshot", (snap) => {
   if (before?.phase !== snap.phase || before?.levelId !== snap.levelId) {
     store.sel = emptySelection();
     store.previews.clear();
-    if (before) say("");
+    // keep "Placed." on screen into the countdown; clear older news
+    if (before && !(before.phase === "BUILD" && snap.phase === "COUNTDOWN")) say("");
   }
   // my build is done (or timed out): put the piece down
   if (snap.phase === "BUILD" && !iCanBuild() && store.sel.choice) store.sel = emptySelection();
@@ -67,7 +68,7 @@ socket.on("build:preview", (p) => {
 });
 
 socket.on("run:pose", (p) => {
-  if (sceneReady) scene.onRemotePose(p.playerId, p.x, p.y, p.facing);
+  if (sceneReady) scene.onRemotePose(p.playerId, p.x, p.y, p.vx, p.vy, p.facing);
 });
 
 socket.on("disconnect", () => say("Lost the connection. Reconnecting…", true));
@@ -100,26 +101,35 @@ bus.pose = (p) => socket.volatile.emit("run:pose", p);
 bus.result = (r) => socket.emit("run:result", r);
 bus.say = say;
 
+const HINTS: Record<BuildChoice, string> = {
+  platform: "Click the level to put it there. R turns it into a post.",
+  spring: "Click the level to put it there. Land on its pad to bounce high.",
+  spike: "Click the level to put it there. +0.2 for you each time it gets someone else.",
+  fan: "Click the level to put it there. R turns which way it blows.",
+  moving: "Click the level to put it there. R switches between sliding sideways and up and down.",
+  bomb: "Click a placed piece to demolish it. Anyone's piece can go.",
+};
+
 function choose(choice: BuildChoice): void {
   if (!iCanBuild()) return;
   const same = store.sel.choice === choice;
-  store.sel = { ...emptySelection(), rot: store.sel.rot, choice: same ? null : choice };
-  say(same ? "" : choice === "bomb" ? "Click a placed piece to demolish it. Anyone's piece can go." : "Click the level to put it there.");
+  store.sel = { ...emptySelection(), choice: same ? null : choice };
+  say(same ? "" : HINTS[choice]);
   bus.selectionChanged();
 }
 
 function rotate(): void {
   const sel = store.sel;
-  if (sel.choice !== "platform") return;
-  sel.rot = sel.rot ? 0 : 1;
-  if (sel.hover) sel.hover = null;
+  if (!sel.choice || sel.choice === "bomb" || ROTATIONS[sel.choice] < 2) return;
+  sel.rot = (sel.rot + 1) % ROTATIONS[sel.choice];
+  sel.hover = null;
   if (sel.pinned) sel.pinned = { ...sel.pinned, rot: sel.rot };
   bus.selectionChanged();
 }
 
 function cancel(): void {
   if (!store.sel.choice) return;
-  store.sel = { ...emptySelection(), rot: store.sel.rot };
+  store.sel = emptySelection();
   say("");
   bus.selectionChanged();
 }
@@ -152,6 +162,7 @@ function skip(): void {
 }
 
 buildTray(choose);
+onVote((v) => socket.emit("level:vote", v));
 buttons.rotate.addEventListener("click", rotate);
 buttons.cancel.addEventListener("click", cancel);
 buttons.skip.addEventListener("click", skip);
@@ -159,9 +170,8 @@ buttons.commit.addEventListener("click", commit);
 
 document.addEventListener("keydown", (e) => {
   if (e.repeat || e.ctrlKey || e.metaKey || e.altKey || store.snap?.phase !== "BUILD") return;
-  const pieces: BuildChoice[] = ["platform", "spring", "spike", "bomb"];
   const n = Number(e.key);
-  if (n >= 1 && n <= 4) choose(pieces[n - 1]);
+  if (n >= 1 && n <= PIECES.length) choose(PIECES[n - 1].choice);
   else if (e.key === "r" || e.key === "R") rotate();
   else if (e.key === "Escape") cancel();
   else if (e.key === "Enter" && (store.sel.pinned || store.sel.target)) {

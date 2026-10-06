@@ -4,31 +4,36 @@
 // characters are interpolated from their snapshots and never collide.
 import Phaser from "phaser";
 import {
-  BASE_BLOCKS, CELL, COLS, DEATH_Y, FLAG, GOAL_TRIGGER, GOAL_ZONE, HEIGHT, type Item, type Proposal, ROWS,
-  SPAWN, START_ZONE, WIDTH, body, cellToPixels, footprint, placementError,
+  BASE_BLOCKS, CELL, COLS, DEATH_Y, FAN_DIRS, FLAG, GOAL_TRIGGER, GOAL_ZONE, HEIGHT, type Item, type PixelRect, type Proposal, ROWS,
+  SPAWN, START_ZONE, WIDTH, body, cellToPixels, fanZone, footprint, movingOffset, placementError,
 } from "../shared/level.ts";
 import { MOVEMENT, type Side, canWallJump, wallJumpVelocity } from "../shared/movement.ts";
 import type { Phase } from "../shared/rounds.ts";
-import { C, drawBlock, drawFigure, drawItem, hex } from "./draw.ts";
+import { C, type Pose, drawBlock, drawFanBlades, drawFigure, drawItem, drawMovingPlank, drawTravel, hex } from "./draw.ts";
 import { bus, iCanBuild, store } from "./state.ts";
 
 const POSE_EVERY_MS = 80; // ~12 a second
 const INTERP_DELAY_MS = 110;
+// figures are drawn a little larger than their collision box, to read at a glance
+const FIGURE_SCALE = 1.25;
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
 interface PlacedView {
   item: Item;
   view: Phaser.GameObjects.Container;
   solid: Phaser.GameObjects.Rectangle;
+  // fans: blades and wind, redrawn every frame
+  blades?: Phaser.GameObjects.Graphics;
+  // moving platforms: the plank, moved every frame
+  plank?: Phaser.GameObjects.Graphics;
 }
 
 interface Remote {
   view: Phaser.GameObjects.Container;
   figure: Phaser.GameObjects.Graphics;
-  label: Phaser.GameObjects.Text;
   colour: number;
   facing: -1 | 1;
-  samples: { t: number; x: number; y: number; facing: -1 | 1 }[];
+  samples: { t: number; x: number; y: number; vx: number; vy: number; facing: -1 | 1 }[];
   gone: boolean;
 }
 
@@ -45,10 +50,14 @@ interface Local {
   lastPoseAt: number;
 }
 
+const inside = (r: PixelRect, x: number, y: number): boolean => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
+const NAMES: Record<string, string> = { platform: "Platform", spring: "Spring", spike: "Spike", fan: "Fan", moving: "Moving platform" };
+
 export class LevelScene extends Phaser.Scene {
   private solids!: Phaser.Physics.Arcade.StaticGroup;
   private springs!: Phaser.Physics.Arcade.StaticGroup;
   private spikes!: Phaser.Physics.Arcade.StaticGroup;
+  private movers!: Phaser.Physics.Arcade.Group;
   private goal!: Phaser.GameObjects.Zone;
   private placed = new Map<string, PlacedView>();
   private remotes = new Map<string, Remote>();
@@ -61,6 +70,9 @@ export class LevelScene extends Phaser.Scene {
   private flag!: Phaser.GameObjects.Container;
   private keys!: Record<"left" | "right" | "up" | "a" | "d" | "w" | "space", Phaser.Input.Keyboard.Key>;
   private phase: Phase | null = null;
+  private runStartedAt = 0; // performance.now() when RUN began, for moving platforms
+  private spin = 0; // fan blades
+  hoverInfo = "";
   // set by main.ts; called once the scene exists
   onReady = (): void => {};
 
@@ -74,6 +86,7 @@ export class LevelScene extends Phaser.Scene {
     this.solids = this.physics.add.staticGroup();
     this.springs = this.physics.add.staticGroup();
     this.spikes = this.physics.add.staticGroup();
+    this.movers = this.physics.add.group({ allowGravity: false, immovable: true });
 
     this.buildLayer = this.add.graphics().setDepth(0);
     this.traceLayer = this.add.graphics().setDepth(1);
@@ -98,15 +111,20 @@ export class LevelScene extends Phaser.Scene {
   // ---------- the fixed course ----------
 
   private drawFixtures(): void {
-    // the desk: faint ruled paper, and a soft dark fall-off at the bottom so
-    // the gaps between blocks read as somewhere you can fall
-    const desk = this.add.graphics().setDepth(-1);
-    desk.lineStyle(1, C.blue, 0.05);
-    for (let y = CELL * 2; y < HEIGHT; y += CELL * 2) desk.lineBetween(0, y, WIDTH, y);
+    // the back of the display box: soft vertical boards, and a dark fall-off
+    // at the bottom so the gaps read as somewhere you can fall
+    const back = this.add.graphics().setDepth(-2);
+    back.fillStyle(C.paperLight, 1);
+    back.fillRect(0, 0, WIDTH, HEIGHT);
+    back.lineStyle(1, C.woodDark, 0.06);
+    for (let x = 160; x < WIDTH; x += 160) back.lineBetween(x, 0, x, HEIGHT);
+    back.fillStyle(C.ink, 0.035);
+    back.fillRect(0, 0, WIDTH, 10);
     for (let i = 0; i < 6; i++) {
-      desk.fillStyle(C.ink, 0.035 * (i + 1));
-      desk.fillRect(0, HEIGHT - 6 * (6 - i), WIDTH, 6);
+      back.fillStyle(C.ink, 0.035 * (i + 1));
+      back.fillRect(0, HEIGHT - 6 * (6 - i), WIDTH, 6);
     }
+
     const g = this.add.graphics().setDepth(5);
     for (const b of BASE_BLOCKS) {
       const r = cellToPixels(b);
@@ -117,28 +135,30 @@ export class LevelScene extends Phaser.Scene {
     // START: a small painted sign on the ledge
     const sign = this.add.graphics().setDepth(4);
     sign.fillStyle(C.woodDeep, 1);
-    sign.fillRect(SPAWN.x + 70, SPAWN.y - 44, 4, 44);
-    sign.fillStyle(C.paper, 1);
+    sign.fillRect(SPAWN.x + 70, SPAWN.y - 40, 4, 40);
+    sign.fillStyle(C.woodLight, 1);
     sign.lineStyle(2, C.woodDeep, 1);
-    sign.fillRoundedRect(SPAWN.x + 46, SPAWN.y - 62, 52, 22, 4);
-    sign.strokeRoundedRect(SPAWN.x + 46, SPAWN.y - 62, 52, 22, 4);
-    this.add.text(SPAWN.x + 72, SPAWN.y - 51, "START", { fontFamily: "system-ui, sans-serif", fontSize: "11px", fontStyle: "bold", color: "#6a655d" })
+    sign.fillRoundedRect(SPAWN.x + 40, SPAWN.y - 64, 64, 26, 3);
+    sign.strokeRoundedRect(SPAWN.x + 40, SPAWN.y - 64, 64, 26, 3);
+    this.add.text(SPAWN.x + 72, SPAWN.y - 51, "START", { fontFamily: "Georgia, serif", fontSize: "14px", fontStyle: "bold", color: "#4a3420" })
       .setOrigin(0.5).setDepth(4);
 
-    // GOAL: a brass pole and a cloth flag that stirs
+    // GOAL: a brass pole and a red cloth flag that stirs
     const pole = this.add.graphics().setDepth(6);
-    pole.fillStyle(C.ink, 0.1);
-    pole.fillEllipse(FLAG.x + 2, FLAG.y + 1, 22, 5);
+    pole.fillStyle(C.ink, 0.12);
+    pole.fillEllipse(FLAG.x + 2, FLAG.y + 1, 26, 5);
+    pole.fillStyle(C.woodDeep, 1);
+    pole.fillRoundedRect(FLAG.x - 10, FLAG.y - 6, 20, 6, 2);
     pole.fillStyle(C.brass, 1);
-    pole.fillRect(FLAG.x - 2, FLAG.y - 92, 4, 92);
-    pole.fillCircle(FLAG.x, FLAG.y - 94, 4);
+    pole.fillRect(FLAG.x - 2, FLAG.y - 96, 4, 92);
+    pole.fillCircle(FLAG.x, FLAG.y - 98, 4);
     const cloth = this.add.graphics();
-    cloth.fillStyle(C.green, 1);
-    cloth.fillTriangle(0, 0, 0, 30, 44, 15);
-    cloth.fillStyle(0xffffff, 0.18);
-    cloth.fillTriangle(0, 2, 0, 12, 22, 8);
-    this.flag = this.add.container(FLAG.x + 2, FLAG.y - 90, [cloth]).setDepth(6);
-    if (!reducedMotion.matches) this.tweens.add({ targets: this.flag, scaleX: 0.88, duration: 900, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    cloth.fillStyle(C.red, 1);
+    cloth.fillTriangle(0, 0, 0, 32, 48, 14);
+    cloth.fillStyle(C.redDark, 1);
+    cloth.fillTriangle(0, 18, 0, 32, 30, 22);
+    this.flag = this.add.container(FLAG.x + 2, FLAG.y - 94, [cloth]).setDepth(6);
+    if (!reducedMotion.matches) this.tweens.add({ targets: this.flag, scaleX: 0.86, duration: 900, yoyo: true, repeat: -1, ease: "Sine.inOut" });
 
     const t = GOAL_TRIGGER;
     this.goal = this.add.zone(t.x + t.w / 2, t.y + t.h / 2, t.w, t.h);
@@ -158,19 +178,20 @@ export class LevelScene extends Phaser.Scene {
     const snap = store.snap;
     if (!snap) return;
     this.syncItems(snap.items);
-    if (snap.phase !== this.phase) this.enterPhase(snap.phase);
+    if (snap.phase !== this.phase) this.enterPhase(snap.phase, snap.phaseElapsedMs);
     this.syncPlayers();
     this.drawBuildLayer();
   }
 
-  private enterPhase(phase: Phase): void {
+  private enterPhase(phase: Phase, elapsedMs: number): void {
     const before = this.phase;
     this.phase = phase;
-    if (phase === "BUILD") {
-      this.clearCharacters();
-    }
+    if (phase === "BUILD" || phase === "LEVEL_END") this.clearCharacters();
     if (phase === "COUNTDOWN" || (phase === "RUN" && before !== "COUNTDOWN")) this.placeAtStart(phase === "RUN");
-    if (phase === "RUN") this.release();
+    if (phase === "RUN") {
+      this.runStartedAt = performance.now() - elapsedMs;
+      this.release();
+    }
     this.ghost.clear();
     this.ghostPiece.clear();
     for (const l of this.previewLabels.values()) l.destroy();
@@ -188,9 +209,12 @@ export class LevelScene extends Phaser.Scene {
       // demolished: a small pop, then gone
       this.placed.delete(id);
       pv.solid.destroy();
-      if (reducedMotion.matches) pv.view.destroy();
-      else this.tweens.add({ targets: pv.view, scaleX: 1.15, scaleY: 1.15, alpha: 0, duration: 260, ease: "Back.in", onComplete: () => pv.view.destroy() });
-      this.puff(pv.view.x + 20, pv.view.y - 10, C.woodDark);
+      pv.blades?.destroy();
+      const views: Phaser.GameObjects.GameObject[] = [pv.view, ...(pv.plank ? [pv.plank] : [])];
+      const f = footprint(pv.item);
+      this.puff((f.col + f.w / 2) * CELL, (f.row + f.h / 2) * CELL, C.woodDark);
+      if (reducedMotion.matches) views.forEach((v) => v.destroy());
+      else this.tweens.add({ targets: views, alpha: 0, duration: 240, ease: "Quad.in", onComplete: () => views.forEach((v) => v.destroy()) });
     }
     for (const item of items) {
       if (this.placed.has(item.id)) continue;
@@ -199,9 +223,22 @@ export class LevelScene extends Phaser.Scene {
       drawItem(g, item.type, item.rot, 0, 0);
       const view = this.add.container(f.col * CELL, (f.row + f.h) * CELL, [g]).setDepth(item.type === "spike" ? 9 : 8);
       const b = body(item);
-      const group = item.type === "spring" ? this.springs : item.type === "spike" ? this.spikes : this.solids;
-      const solid = this.addSolid(group, b.x, b.y, b.w, b.h);
-      this.placed.set(item.id, { item, view, solid });
+      let solid: Phaser.GameObjects.Rectangle;
+      let plank: Phaser.GameObjects.Graphics | undefined;
+      if (item.type === "moving") {
+        solid = this.add.rectangle(b.x + b.w / 2, b.y + b.h / 2, b.w, b.h).setVisible(false);
+        this.physics.add.existing(solid);
+        this.movers.add(solid);
+        const rb = solid.body as Phaser.Physics.Arcade.Body;
+        rb.setAllowGravity(false).setImmovable(true);
+        rb.friction.set(1, 0); // riders are carried along
+        plank = this.add.graphics().setDepth(8);
+      } else {
+        const group = item.type === "spring" ? this.springs : item.type === "spike" ? this.spikes : this.solids;
+        solid = this.addSolid(group, b.x, b.y, b.w, b.h);
+      }
+      const blades = item.type === "fan" ? this.add.graphics().setDepth(9) : undefined;
+      this.placed.set(item.id, { item, view, solid, blades, plank });
       // newly committed while we watch: it settles into place
       if (this.phase && !reducedMotion.matches) {
         view.y -= 14;
@@ -219,14 +256,14 @@ export class LevelScene extends Phaser.Scene {
     const snap = store.snap;
     if (snap?.phase !== "BUILD") return;
     // a faint grid of dots: only while building
-    g.fillStyle(C.ink, 0.12);
+    g.fillStyle(C.ink, 0.13);
     for (let c = 1; c < COLS; c++) for (let r = 1; r < ROWS; r++) g.fillCircle(c * CELL, r * CELL, 1.2);
     // protected areas, shown only while relevant
     for (const z of [START_ZONE, GOAL_ZONE]) {
       const r = cellToPixels(z);
-      g.fillStyle(C.green, 0.06);
+      g.fillStyle(C.green, 0.07);
       g.fillRoundedRect(r.x + 2, r.y + 2, r.w - 4, r.h - 4, 8);
-      g.lineStyle(1.5, C.green, 0.35);
+      g.lineStyle(1.5, C.green, 0.4);
       g.strokeRoundedRect(r.x + 2, r.y + 2, r.w - 4, r.h - 4, 8);
     }
     // where people fell last run
@@ -249,7 +286,7 @@ export class LevelScene extends Phaser.Scene {
   private spawnFor(id: string): { x: number; y: number } {
     const active = (store.snap?.players ?? []).filter((p) => p.active);
     const i = Math.max(0, active.findIndex((p) => p.id === id));
-    return { x: SPAWN.x - 40 + (i % 6) * 18, y: SPAWN.y };
+    return { x: SPAWN.x - 44 + i * 24, y: SPAWN.y };
   }
 
   private placeAtStart(live: boolean): void {
@@ -261,7 +298,7 @@ export class LevelScene extends Phaser.Scene {
       if (p.id === store.me) this.createLocal(at.x, at.y, live);
       else {
         const r = this.ensureRemote(p.id);
-        r.samples = [{ t: performance.now(), x: at.x, y: at.y, facing: 1 }];
+        r.samples = [{ t: performance.now(), x: at.x, y: at.y, vx: 0, vy: 0, facing: 1 }];
         r.view.setPosition(at.x, at.y);
       }
     }
@@ -269,34 +306,41 @@ export class LevelScene extends Phaser.Scene {
 
   private createLocal(x: number, y: number, live: boolean): void {
     const colour = this.colourOf(store.me);
-    const rect = this.add.rectangle(x, y - 14, 22, 28).setVisible(false);
+    const rect = this.add.rectangle(x, y - 14, 20, 28).setVisible(false);
     this.physics.add.existing(rect);
     const b = rect.body as Phaser.Physics.Arcade.Body;
     b.setCollideWorldBounds(true);
     b.setMaxVelocity(1000, MOVEMENT.maxFallSpeed);
     b.setAllowGravity(live);
-    const figure = this.add.graphics();
+    const figure = this.add.graphics().setScale(FIGURE_SCALE);
     drawFigure(figure, colour, 1);
     // a small marker so you can find yourself among several
-    const you = this.add.triangle(0, -40, 0, 0, 10, 0, 5, 7, colour).setOrigin(0.5);
-    const view = this.add.container(x, y, [figure, you]).setDepth(15);
+    const you = this.add.triangle(0, -52, 0, 0, 10, 0, 5, 7, colour).setOrigin(0.5);
+    const label = this.add.text(0, -63, "You", { fontFamily: "system-ui, sans-serif", fontSize: "11px", fontStyle: "bold", color: "#4a4640" }).setOrigin(0.5);
+    const view = this.add.container(x, y, [figure, you, label]).setDepth(15);
     this.local = { rect, view, figure, colour, facing: 1, lastWallTouchAt: null, lastWallSide: 1, wasOnGround: false, live, lastPoseAt: 0 };
     this.physics.add.collider(rect, this.solids);
+    this.physics.add.collider(rect, this.movers);
     this.physics.add.collider(rect, this.springs, (_p, s) => this.bounce(s as Phaser.GameObjects.Rectangle));
-    this.physics.add.overlap(rect, this.spikes, () => this.die());
+    this.physics.add.overlap(rect, this.spikes, (_p, s) => this.die(false, this.itemFor(s as Phaser.GameObjects.Rectangle)?.id));
     this.physics.add.overlap(rect, this.goal, () => this.finish());
+  }
+
+  private itemFor(solid: Phaser.GameObjects.Rectangle): Item | undefined {
+    for (const pv of this.placed.values()) if (pv.solid === solid) return pv.item;
+    return undefined;
   }
 
   private ensureRemote(id: string): Remote {
     let r = this.remotes.get(id);
     if (r) return r;
     const colour = this.colourOf(id);
-    const figure = this.add.graphics();
+    const figure = this.add.graphics().setScale(FIGURE_SCALE);
     drawFigure(figure, colour, 1);
     const name = store.snap?.players.find((p) => p.id === id)?.name ?? "";
-    const label = this.add.text(0, -44, name, { fontFamily: "system-ui, sans-serif", fontSize: "11px", color: "#6a655d" }).setOrigin(0.5);
-    const view = this.add.container(0, 0, [figure, label]).setDepth(12).setAlpha(0.9);
-    r = { view, figure, label, colour, facing: 1, samples: [], gone: false };
+    const label = this.add.text(0, -52, name, { fontFamily: "system-ui, sans-serif", fontSize: "11px", color: "#6a655d" }).setOrigin(0.5);
+    const view = this.add.container(0, 0, [figure, label]).setDepth(12).setAlpha(0.92);
+    r = { view, figure, colour, facing: 1, samples: [], gone: false };
     this.remotes.set(id, r);
     return r;
   }
@@ -322,17 +366,17 @@ export class LevelScene extends Phaser.Scene {
         this.remotes.delete(p.id);
       } else if (p.run === "FINISHED") {
         r.gone = true;
-        this.tweens.add({ targets: r.view, alpha: 0.45, duration: 400 });
+        this.tweens.add({ targets: r.view, alpha: 0.5, duration: 400 });
       }
     }
   }
 
-  onRemotePose(id: string, x: number, y: number, facing: -1 | 1): void {
+  onRemotePose(id: string, x: number, y: number, vx: number, vy: number, facing: -1 | 1): void {
     if (this.phase !== "RUN") return;
     const p = store.snap?.players.find((q) => q.id === id);
     if (!p || p.run !== "RUNNING") return;
     const r = this.ensureRemote(id);
-    r.samples.push({ t: performance.now(), x, y, facing });
+    r.samples.push({ t: performance.now(), x, y, vx, vy, facing });
     if (r.samples.length > 20) r.samples.shift();
   }
 
@@ -357,17 +401,22 @@ export class LevelScene extends Phaser.Scene {
     if (pv && !reducedMotion.matches) this.tweens.add({ targets: pv.view, scaleY: 0.6, duration: 70, yoyo: true, ease: "Quad.out" });
   }
 
-  private die(fromServer = false): void {
+  private die(fromServer = false, by?: string): void {
     const l = this.local;
     if (!l?.live) return;
     l.live = false;
     const x = l.rect.x, y = l.rect.y + 14;
-    if (!fromServer) bus.result({ result: "DEAD", x, y: Math.min(y, HEIGHT) });
+    if (!fromServer) bus.result({ result: "DEAD", x, y: Math.min(y, HEIGHT), by });
     this.puff(x, Math.min(y, HEIGHT - 10) - 14, l.colour);
     l.rect.destroy();
     l.view.destroy();
     this.local = null;
-    bus.say(fromServer ? "You stood still too long and dropped out of this run." : "You fell. Watch how the others do.");
+    const spike = by ? store.snap?.items.find((i) => i.id === by) : undefined;
+    bus.say(
+      fromServer ? "You stood still too long and dropped out of this run."
+        : spike ? `Caught by ${spike.createdById === store.me ? "your own" : `${spike.createdBy}'s`} spike. Watch how the others do.`
+          : "You fell. Watch how the others do.",
+    );
   }
 
   private finish(): void {
@@ -381,15 +430,15 @@ export class LevelScene extends Phaser.Scene {
       this.tweens.add({ targets: l.figure, y: -18, duration: 180, yoyo: true, ease: "Quad.out" });
       this.tweens.add({ targets: this.flag, scaleY: 1.2, duration: 160, yoyo: true });
     }
-    bus.say("You reached the flag.");
+    bus.say("You reached the flag. +1");
   }
 
   private puff(x: number, y: number, colour: number): void {
     if (reducedMotion.matches) return;
-    for (let i = 0; i < 6; i++) {
-      const a = (i / 6) * Math.PI * 2;
+    for (let i = 0; i < 7; i++) {
+      const a = (i / 7) * Math.PI * 2;
       const dot = this.add.circle(x, y, 4, i % 2 ? colour : C.inkSoft, 0.7).setDepth(16);
-      this.tweens.add({ targets: dot, x: x + Math.cos(a) * 20, y: y + Math.sin(a) * 14 - 6, alpha: 0, scale: 0.4, duration: 380, ease: "Quad.out", onComplete: () => dot.destroy() });
+      this.tweens.add({ targets: dot, x: x + Math.cos(a) * 22, y: y + Math.sin(a) * 15 - 6, alpha: 0, scale: 0.4, duration: 400, ease: "Quad.out", onComplete: () => dot.destroy() });
     }
   }
 
@@ -429,10 +478,11 @@ export class LevelScene extends Phaser.Scene {
       return;
     }
     if (sel.choice) {
-      // the pointer holds the middle of a platform
-      const col = sel.choice === "platform" && !sel.rot ? cell.col - 1 : cell.col;
-      const row = sel.choice === "platform" && sel.rot ? cell.row - 1 : cell.row;
-      if (sel.hover?.col !== col || sel.hover?.row !== row || sel.hover?.rot !== sel.rot) {
+      // the pointer holds the middle of a long piece
+      const f = footprint({ type: sel.choice, col: 0, row: 0, rot: sel.rot });
+      const col = cell.col - Math.floor((f.w - 1) / 2);
+      const row = cell.row - Math.floor((f.h - 1) / 2);
+      if (sel.hover?.col !== col || sel.hover?.row !== row || sel.hover?.rot !== sel.rot || sel.hover?.type !== sel.choice) {
         sel.hover = { type: sel.choice, col, row, rot: sel.rot };
         bus.selectionChanged();
       }
@@ -441,9 +491,8 @@ export class LevelScene extends Phaser.Scene {
     // nothing chosen: say who made what you point at
     const item = this.itemAt(cell.col, cell.row);
     this.game.canvas.style.cursor = item ? "help" : "default";
-    this.hoverInfo = item ? `${item.type[0].toUpperCase()}${item.type.slice(1)} placed by ${item.createdBy} in round ${item.createdRound}.` : "";
+    this.hoverInfo = item ? `${NAMES[item.type]} placed by ${item.createdBy}${item.createdRound ? ` in round ${item.createdRound}` : " in an earlier game"}.` : "";
   }
-  hoverInfo = "";
 
   private pointerDown(x: number, y: number): void {
     if (store.snap?.phase !== "BUILD" || !iCanBuild()) return;
@@ -463,10 +512,41 @@ export class LevelScene extends Phaser.Scene {
   }
 
   update(time: number, delta: number): void {
+    const runMs = this.phase === "RUN" ? performance.now() - this.runStartedAt : 0;
+    this.spin += (delta / 1000) * (this.phase === "RUN" ? 9 : 1.2);
+    this.animateItems(runMs, delta / 1000);
     if (this.phase === "BUILD") this.drawGhosts();
     if (this.local?.live && this.phase === "RUN") this.step(time, delta / 1000);
-    else if (this.local) this.local.view.setPosition(this.local.rect.x, this.local.rect.y + 14);
-    this.drawRemotes();
+    else if (this.local) {
+      this.local.view.setPosition(this.local.rect.x, this.local.rect.y + 14);
+      this.redrawLocal("stand", time);
+    }
+    this.drawRemotes(time);
+  }
+
+  // fans spin, moving platforms slide (and carry whoever rides them)
+  private animateItems(runMs: number, dt: number): void {
+    for (const pv of this.placed.values()) {
+      const it = pv.item;
+      if (pv.blades) {
+        const f = footprint(it);
+        pv.blades.clear();
+        drawFanBlades(pv.blades, it.rot, (f.col + 0.5) * CELL, (f.row + 0.5) * CELL, this.spin, this.phase === "RUN" ? 1 : 0.35);
+      }
+      if (pv.plank) {
+        const b = body(it);
+        const o = movingOffset(it, runMs);
+        const rb = pv.solid.body as Phaser.Physics.Arcade.Body;
+        const tx = b.x + o.dx, ty = b.y + o.dy;
+        if (this.phase === "RUN" && dt > 0) rb.setVelocity((tx - rb.x) / dt, (ty - rb.y) / dt);
+        else {
+          rb.reset(tx + b.w / 2, ty + b.h / 2);
+          rb.setVelocity(0, 0);
+        }
+        pv.plank.clear();
+        drawMovingPlank(pv.plank, rb.x, rb.y);
+      }
+    }
   }
 
   private drawGhosts(): void {
@@ -531,16 +611,30 @@ export class LevelScene extends Phaser.Scene {
     const f = footprint(p);
     const valid = placementError(items, p) === null;
     const pinned = !!sel.pinned;
-    g.fillStyle(valid ? C.green : C.red, pinned ? 0.12 : 0.07);
+    const tint = valid ? C.green : C.red;
+    g.fillStyle(tint, pinned ? 0.12 : 0.07);
     g.fillRoundedRect(f.col * CELL, f.row * CELL, f.w * CELL, f.h * CELL, 6);
-    g.lineStyle(pinned ? 2.5 : 1.5, valid ? C.green : C.red, pinned ? 0.9 : 0.55);
+    g.lineStyle(pinned ? 2.5 : 1.5, tint, pinned ? 0.9 : 0.55);
     g.strokeRoundedRect(f.col * CELL, f.row * CELL, f.w * CELL, f.h * CELL, 6);
     // the piece itself, lifted a little until it is pinned
-    drawItem(this.ghostPiece, p.type, p.rot, f.col * CELL, (f.row + f.h) * CELL - (pinned ? 0 : 3));
+    const lift = pinned ? 0 : 3;
+    drawItem(this.ghostPiece, p.type, p.rot, f.col * CELL, (f.row + f.h) * CELL - lift);
+    if (p.type === "fan") {
+      // where the wind will blow
+      const z = fanZone(p);
+      g.lineStyle(1, C.blue, 0.5);
+      g.strokeRect(z.x + 2, z.y + 2, z.w - 4, z.h - 4);
+      drawFanBlades(this.ghostPiece, p.rot, (f.col + 0.5) * CELL, (f.row + 0.5) * CELL - lift, this.spin, 0.8);
+    }
+    if (p.type === "moving") {
+      const b = body(p);
+      drawMovingPlank(this.ghostPiece, b.x, b.y - lift);
+      drawTravel(this.ghostPiece, p.rot, f.col * CELL, (f.row + f.h) * CELL, C.greenDark, 0.7);
+    }
     this.ghostPiece.setAlpha(valid ? (pinned ? 0.95 : 0.6) : 0.35);
   }
 
-  private drawRemotes(): void {
+  private drawRemotes(time: number): void {
     const t = performance.now() - INTERP_DELAY_MS;
     for (const r of this.remotes.values()) {
       if (r.gone || r.samples.length === 0) continue;
@@ -555,12 +649,17 @@ export class LevelScene extends Phaser.Scene {
       }
       const k = b.t === a.t ? 1 : Math.min(1, Math.max(0, (t - a.t) / (b.t - a.t)));
       r.view.setPosition(a.x + (b.x - a.x) * k, a.y + (b.y - a.y) * k);
-      if (b.facing !== r.facing) {
-        r.facing = b.facing;
-        r.figure.clear();
-        drawFigure(r.figure, r.colour, r.facing);
-      }
+      r.facing = b.facing;
+      const pose: Pose = Math.abs(b.vy) > 80 ? (b.vy < 0 ? "jump" : "fall") : Math.abs(b.vx) > 30 ? "run" : "stand";
+      r.figure.clear();
+      drawFigure(r.figure, r.colour, r.facing, this.phase === "RUN" ? pose : "stand", time);
     }
+  }
+
+  private redrawLocal(pose: Pose, time: number): void {
+    const l = this.local!;
+    l.figure.clear();
+    drawFigure(l.figure, l.colour, l.facing, pose, time);
   }
 
   // ---------- my own movement ----------
@@ -571,13 +670,23 @@ export class LevelScene extends Phaser.Scene {
     const k = this.keys;
     const dir = (k.right.isDown || k.d.isDown ? 1 : 0) - (k.left.isDown || k.a.isDown ? 1 : 0);
     const jump = Phaser.Input.Keyboard.JustDown(k.up) || Phaser.Input.Keyboard.JustDown(k.w) || Phaser.Input.Keyboard.JustDown(k.space);
-    const onGround = b.blocked.down;
+    const onGround = b.blocked.down || b.touching.down;
 
-    // run: ease towards the target speed
-    const target = dir * MOVEMENT.moveSpeed;
+    // fans: inside a zone, the wind sets a drift (sideways) or lifts and presses (up, down)
+    let windX = 0, windY = 0;
+    for (const pv of this.placed.values()) {
+      if (pv.item.type !== "fan" || !inside(fanZone(pv.item), l.rect.x, l.rect.y)) continue;
+      const d = FAN_DIRS[pv.item.rot % 4];
+      windX += d.x;
+      windY += d.y;
+    }
+
+    // run: ease towards the target speed, which the wind shifts
+    const target = dir * MOVEMENT.moveSpeed + windX * MOVEMENT.fanWindSpeed;
     const accel = (onGround ? MOVEMENT.groundAcceleration : MOVEMENT.airAcceleration) * dt;
     const vx = b.velocity.x;
     b.setVelocityX(Math.abs(target - vx) <= accel ? target : vx + Math.sign(target - vx) * accel);
+    if (windY) b.setVelocityY(b.velocity.y + windY * MOVEMENT.fanLift * dt);
 
     // walls: remember the last touch so a jump just after leaving still counts
     const wallSide: Side | 0 = !onGround && b.blocked.left ? -1 : !onGround && b.blocked.right ? 1 : 0;
@@ -598,24 +707,21 @@ export class LevelScene extends Phaser.Scene {
 
     // a little squash on landing
     if (onGround && !l.wasOnGround && !reducedMotion.matches) {
-      l.view.setScale(1.12, 0.86);
+      l.view.setScale(1.12, 0.88);
       this.tweens.add({ targets: l.view, scaleX: 1, scaleY: 1, duration: 140, ease: "Quad.out" });
     }
     l.wasOnGround = onGround;
 
-    const facing: -1 | 1 = dir === 0 ? l.facing : dir > 0 ? 1 : -1;
-    if (facing !== l.facing) {
-      l.facing = facing;
-      l.figure.clear();
-      drawFigure(l.figure, l.colour, facing);
-    }
+    l.facing = wallSide && dir === wallSide ? wallSide : dir === 0 ? l.facing : dir > 0 ? 1 : -1;
+    const pose: Pose = wallSide && dir === wallSide ? "wall" : !onGround ? (b.velocity.y < 0 ? "jump" : "fall") : Math.abs(b.velocity.x) > 30 ? "run" : "stand";
+    this.redrawLocal(pose, now);
     l.view.setPosition(l.rect.x, l.rect.y + 14);
 
     if (l.rect.y > DEATH_Y) return this.die();
 
     if (now - l.lastPoseAt >= POSE_EVERY_MS) {
       l.lastPoseAt = now;
-      bus.pose({ x: Math.round(l.rect.x), y: Math.round(l.rect.y + 14), vx: Math.round(b.velocity.x), vy: Math.round(b.velocity.y), facing });
+      bus.pose({ x: Math.round(l.rect.x), y: Math.round(l.rect.y + 14), vx: Math.round(b.velocity.x), vy: Math.round(b.velocity.y), facing: l.facing });
     }
   }
 

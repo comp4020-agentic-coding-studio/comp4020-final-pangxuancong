@@ -1,8 +1,9 @@
 import { expect, it } from "vitest";
 import {
-  BUILD_IDLE_MS, BUILD_MAX_MS, COUNTDOWN_MS, LEVEL_DONE_MS, MAX_ROUNDS, RESULTS_MS, RUN_IDLE_MS, type RoundState,
-  act, join, leave, moved, newRoundState, report, tick, touchBuild,
+  BUILD_IDLE_MS, BUILD_MAX_MS, COUNTDOWN_MS, MAX_PLAYERS, MAX_ROUNDS, RESULTS_MS, RUN_IDLE_MS, type RoundState, VOTE_MS,
+  act, join, leave, moved, newRoundState, report, tick, touchBuild, vote,
 } from "../src/shared/rounds.ts";
+import { type ScoreEvent, killCredit, tally } from "../src/shared/score.ts";
 
 // The round rules (docs/GAME_LOOP.md) as a pure function of player states and
 // time. Phases end when players are resolved, never on a gameplay timer; the
@@ -126,19 +127,83 @@ it("drops a runner who has not moved for a long time", () => {
   expect(s.players.find((p) => p.id === "b")?.run).toBe("DEAD");
 });
 
-it("starts a fresh level after six rounds", () => {
-  const s = newRoundState(1, 0);
-  join(s, "a", "A", 0);
+// play one player through all six rounds to LEVEL_END
+const toLevelEnd = (s: RoundState, ids: string[]): number => {
   let t = 0;
   for (let round = 1; round <= MAX_ROUNDS; round++) {
     expect(s.round).toBe(round);
-    act(s, "a", "SKIPPED");
+    for (const id of ids) act(s, id, "SKIPPED");
     t = toRun(s, t);
-    report(s, "a", "DEAD");
-    const last = round === MAX_ROUNDS;
-    expect(tick(s, ++t)).toEqual({ to: "RESULTS", levelDone: last });
-    t += last ? LEVEL_DONE_MS : RESULTS_MS;
-    expect(tick(s, t)).toEqual({ to: "BUILD", newLevel: last });
+    for (const id of ids) report(s, id, "DEAD");
+    expect(tick(s, ++t)).toEqual({ to: "RESULTS", levelDone: round === MAX_ROUNDS });
+    t += RESULTS_MS;
+    expect(tick(s, t)?.to).toBe(round === MAX_ROUNDS ? "LEVEL_END" : "BUILD");
   }
+  return t;
+};
+
+it("S8: after six rounds, the vote decides: majority restarts, a tie keeps the level", () => {
+  const s = twoBuilding();
+  let t = toLevelEnd(s, ["a", "b"]);
+  vote(s, "a", "RESTART");
+  expect(tick(s, ++t)).toBeNull(); // B has not voted yet
+  vote(s, "b", "RESTART");
+  expect(tick(s, ++t)).toEqual({ to: "BUILD", newLevel: true, archive: false });
   expect(s.round).toBe(1);
+
+  const tie = twoBuilding();
+  t = toLevelEnd(tie, ["a", "b"]);
+  vote(tie, "a", "RESTART");
+  vote(tie, "b", "ARCHIVE");
+  expect(tick(tie, ++t)).toEqual({ to: "BUILD", newLevel: true, archive: true });
+});
+
+it("S8: nobody voting keeps the level once the vote times out", () => {
+  const s = twoBuilding();
+  const t = toLevelEnd(s, ["a", "b"]);
+  expect(tick(s, t + VOTE_MS - 1)).toBeNull();
+  expect(tick(s, t + VOTE_MS)).toEqual({ to: "BUILD", newLevel: true, archive: true });
+  expect(vote(s, "a", "RESTART")).toBe(false); // the vote is over
+});
+
+it("S9: seats four players; a fifth watches and takes a seat that frees up", () => {
+  const s = newRoundState(1, 0);
+  for (const id of ["a", "b", "c", "d", "e"]) join(s, id, id.toUpperCase(), 0);
+  expect(s.players.filter((p) => p.active).map((p) => p.id)).toEqual(["a", "b", "c", "d"]);
+  expect(MAX_PLAYERS).toBe(4);
+  for (const id of ["a", "b", "c", "d"]) act(s, id, "SKIPPED");
+  let t = toRun(s, 0);
+  expect(s.players.find((p) => p.id === "e")?.run).toBeNull();
+  leave(s, "b");
+  for (const id of ["a", "c", "d"]) report(s, id, "DEAD");
+  tick(s, ++t);
+  tick(s, t + RESULTS_MS);
+  expect(s.phase).toBe("BUILD");
+  expect(s.players.filter((p) => p.active).map((p) => p.id)).toEqual(["a", "c", "d", "e"]);
+});
+
+it("S7: +1 for the flag, +0.2 to the placer per other player spiked, nothing for your own spike", () => {
+  const spike = { type: "spike", createdById: "a" };
+  expect(killCredit("b", spike)).toBe("a");
+  expect(killCredit("a", spike)).toBeNull(); // your own spike
+  expect(killCredit("b", { type: "platform", createdById: "a" })).toBeNull();
+  expect(killCredit("b", undefined)).toBeNull(); // a fall
+  const events: ScoreEvent[] = [
+    { round: 1, playerId: "a", name: "A", kind: "finish" },
+    { round: 1, playerId: "a", name: "A", kind: "kill" },
+    { round: 2, playerId: "a", name: "A", kind: "kill" },
+    { round: 2, playerId: "a", name: "A", kind: "kill" },
+    { round: 2, playerId: "b", name: "B", kind: "finish" },
+  ];
+  const all = tally(events);
+  expect(all.get("a")).toMatchObject({ points: 1.6, finishes: 1, kills: 3 });
+  expect(all.get("b")?.points).toBe(1);
+  expect(tally(events, 2).get("a")?.points).toBe(0.4);
+});
+
+it("goes to the archive-or-restart vote after six rounds, not before", () => {
+  const s = newRoundState(1, 0);
+  join(s, "a", "A", 0);
+  toLevelEnd(s, ["a"]);
+  expect(s.phase).toBe("LEVEL_END");
 });

@@ -17,6 +17,9 @@ export const MOVEMENT = {
   wallJumpVerticalVelocity: 540,
   wallJumpGraceMs: 250,
   springVelocity: 920,
+  // fans: sideways wind shifts your running speed; up/down wind accelerates
+  fanWindSpeed: 240,
+  fanLift: 2300,
 } as const;
 
 export type Side = -1 | 1; // which side the wall is on: -1 left, 1 right

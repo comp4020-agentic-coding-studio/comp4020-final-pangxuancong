@@ -6,7 +6,7 @@ import type { Pose, PreviewView, Snapshot } from "../shared/protocol.ts";
 
 export interface Selection {
   choice: BuildChoice | null;
-  rot: 0 | 1;
+  rot: number;
   hover: Proposal | null; // under the pointer
   pinned: Proposal | null; // clicked, waiting for Place
   hoverTarget: string | null; // bomb: item under the pointer
@@ -26,7 +26,7 @@ export const store = {
 export const bus = {
   selectionChanged: (): void => {},
   pose: (_p: Pose): void => {},
-  result: (_r: { result: "DEAD" | "FINISHED"; x: number; y: number }): void => {},
+  result: (_r: { result: "DEAD" | "FINISHED"; x: number; y: number; by?: string }): void => {},
   say: (_text: string, _error?: boolean): void => {},
 };
 

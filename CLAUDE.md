@@ -44,7 +44,10 @@ Loop and rounds:
   (each is DEAD, FINISHED or DISCONNECTED).
 - Each active player gets at most one build action per BUILD phase, so adds
   at most one item per round.
-- A level lasts six rounds; then a fresh level starts.
+- A game is six rounds on one level, at most four players; then everyone
+  votes to archive the level (keep building on it next game) or restart bare.
+- Scores (+1 finish, +0.2 per other player killed by your spike) live inside
+  one game only (`docs/GAME_LOOP.md`).
 - A committed placement belongs to the level and cannot be dragged again.
 
 Level validity:
@@ -74,8 +77,8 @@ Movement and authority:
 
 Scope and course:
 
-- No chat, accounts, profiles, XP, leaderboards, matchmaking, stores, rooms or
-  AI features.
+- No chat, accounts, profiles, XP, all-time leaderboards, matchmaking, stores,
+  rooms or AI features.
 - `/readme/` must publish the README in full, rendered on the server.
 - Leave the course-fixed settings in `fly.toml`, the `/data` volume and the
   shipped `spec/invariants.test.ts` as they are.

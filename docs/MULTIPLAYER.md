@@ -22,8 +22,12 @@ Players build simultaneously. Event names may change; keep the set small:
 ```text
 round:snapshot   phase:changed   player:presence
 build:preview    build:commit    build:committed   build:skip
-item:destroy     item:destroyed
+item:destroy     item:destroyed   level:vote
 ```
+
+(As built: one `snapshot` event carries all shared state; `build:preview`,
+`build:commit`, `build:bomb`, `build:skip`, `run:pose`, `run:result` and
+`level:vote` go to the server; see `src/shared/protocol.ts`.)
 
 Previews may be broadcast as lightweight, throttled hints; they are never
 persisted. Only a committed placement becomes shared state.

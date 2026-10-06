@@ -11,7 +11,8 @@ Browser (src/client, built by Vite)
 │   Physics), remote players (interpolated), traces
 └── draw.ts: how every piece looks
         │ Socket.IO: snapshot (whole shared state on every change),
-        │ build:preview/commit/bomb/skip, run:pose (~12/s, volatile), run:result
+        │ build:preview/commit/bomb/skip, run:pose (~12/s, volatile),
+        │ run:result (with the killing spike), level:vote
 Server (src/server, TypeScript run directly by Node)
 ├── main.ts: Express, /readme/, /api/level, Vite middleware in dev,
 │   dist/client in production
@@ -19,7 +20,8 @@ Server (src/server, TypeScript run directly by Node)
 └── db.ts: the only code that touches SQLite
 Shared (src/shared, imported by both and by spec/)
 ├── level.ts: grid, base course, START/GOAL zones, placement + demolition rules
-├── rounds.ts: the round state machine, pure
+├── rounds.ts: the round state machine (seats, timeouts, vote), pure
+├── score.ts: points from score events, and who a spike death credits
 ├── movement.ts: movement constants and the wall-jump rule
 └── protocol.ts: socket event types
 SQLite (node:sqlite) at $DATA_DIR/chain-reaction.db
@@ -80,10 +82,17 @@ server does not simulate player physics.
 Persistent (SQLite):
 
 ```sql
-level(id, round, finished_at, created_at, updated_at)
-placed_item(id, level_id, type, col, row, rot, created_by, created_round,
-            created_at, destroyed_by, destroyed_round, destroyed_at)
+level(id, round, parent_id, outcome, finished_at, created_at, updated_at)
+placed_item(id, level_id, type, col, row, rot, created_by, created_by_id,
+            created_round, created_at, destroyed_by, destroyed_round, destroyed_at)
+score_event(level_id, round, player_id, name, kind, created_at)
 ```
+
+One level row is one game of six rounds. Archiving finishes it with
+`outcome = 'archived'` and starts a new row with `parent_id` pointing at it
+and a copy of its surviving items; restarting starts a bare row. Scores are
+tallied from `score_event` (`src/shared/score.ts`), so they survive a restart
+mid-game and belong to that game only.
 
 A demolished item keeps its row with `destroyed_*` set: history, not state.
 A finished level keeps its items. Old crit 8 tables (`mechanism`, `attempt`)

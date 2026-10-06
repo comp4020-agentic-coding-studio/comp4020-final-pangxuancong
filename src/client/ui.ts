@@ -1,33 +1,43 @@
-// The HTML around the level: where we are in the level, who is on the round,
-// what to do now, and the box of pieces. Quiet and secondary to the canvas
-// (docs/ART_DIRECTION.md).
+// The HTML around the level: the Parts Tray, the round panel (phase, players,
+// status and score, one line of guidance), the four-step strip, and the cards
+// that sit over the level between runs (docs/ART_DIRECTION.md).
 import type { BuildChoice } from "../shared/level.ts";
-import type { PlayerView } from "../shared/protocol.ts";
+import type { PlayerView, Snapshot } from "../shared/protocol.ts";
+import type { Vote } from "../shared/rounds.ts";
 import { iCanBuild, myPlayer, store } from "./state.ts";
 
 const $ = (id: string): HTMLElement => document.getElementById(id)!;
 const el = {
-  where: $("where"), roster: $("roster"), phase: $("phase"), overlay: $("overlay"), build: $("build"), tray: $("tray"),
+  where: $("where"), round: $("round"), pill: $("pill"), roster: $("roster"), guide: $("guide"), overlay: $("overlay"),
+  tray: $("tray"), trayPanel: document.querySelector<HTMLElement>(".tray-panel")!, steps: $("steps"),
   rotate: $("rotate") as HTMLButtonElement, cancel: $("cancel") as HTMLButtonElement, skip: $("skip") as HTMLButtonElement,
   commit: $("commit") as HTMLButtonElement, message: $("message"), help: $("help"),
 };
 
-export const PIECES: { choice: BuildChoice; name: string; key: string; icon: string }[] = [
+export const PIECES: { choice: BuildChoice; name: string; icon: string }[] = [
   {
-    choice: "platform", name: "Platform", key: "1",
-    icon: `<rect x="4" y="12" width="48" height="9" rx="3" fill="#b98a5a"/><rect x="6" y="18" width="44" height="2" fill="#8a6440"/><circle cx="9" cy="16" r="1.4" fill="#c9a03d"/><circle cx="47" cy="16" r="1.4" fill="#c9a03d"/>`,
+    choice: "platform", name: "Platform",
+    icon: `<rect x="3" y="11" width="50" height="10" rx="3" fill="#c08c58"/><rect x="5" y="18" width="46" height="3" fill="#8f6339"/><circle cx="9" cy="16" r="1.6" fill="#5d6265"/><circle cx="47" cy="16" r="1.6" fill="#5d6265"/>`,
   },
   {
-    choice: "spring", name: "Spring", key: "2",
-    icon: `<rect x="16" y="25" width="24" height="4" rx="2" fill="#8a6440"/><polyline points="28,25 20,22 36,19 20,16 36,13 28,12" fill="none" stroke="#c9a03d" stroke-width="2.2" stroke-linejoin="round"/><rect x="17" y="8" width="22" height="4" rx="2" fill="#d8aa4c"/>`,
+    choice: "spring", name: "Spring",
+    icon: `<rect x="15" y="26" width="26" height="4" rx="2" fill="#6b4728"/><polyline points="28,26 18,23 38,20 18,17 38,14 28,12" fill="none" stroke="#c9a03d" stroke-width="2.6" stroke-linejoin="round"/><rect x="15" y="7" width="26" height="5" rx="2" fill="#e0ae45"/>`,
   },
   {
-    choice: "spike", name: "Spike", key: "3",
-    icon: `<rect x="14" y="26" width="28" height="3" rx="1.5" fill="#6e4f33"/><path d="M15 26 L20 13 L25 26 Z M23 26 L28 13 L33 26 Z M31 26 L36 13 L41 26 Z" fill="#a54e43"/>`,
+    choice: "spike", name: "Spike",
+    icon: `<rect x="11" y="26" width="34" height="4" rx="2" fill="#6b4728"/><path d="M12 26 L17.5 10 L23 26 Z M23 26 L28.5 10 L34 26 Z M34 26 L39.5 10 L45 26 Z" fill="#b24a3e"/><path d="M17.5 26 L17.5 10 L23 26 Z M28.5 26 L28.5 10 L34 26 Z M39.5 26 L39.5 10 L45 26 Z" fill="#8e3a31"/>`,
   },
   {
-    choice: "bomb", name: "Bomb", key: "4",
-    icon: `<circle cx="27" cy="20" r="9" fill="#2b2a28"/><circle cx="24" cy="17" r="2.2" fill="#fff" opacity=".3"/><path d="M32 12 Q36 6 40 8" fill="none" stroke="#8a6440" stroke-width="2"/><circle cx="40.5" cy="7.5" r="2" fill="#d8aa4c"/>`,
+    choice: "fan", name: "Fan",
+    icon: `<ellipse cx="28" cy="10" rx="4" ry="7" fill="#5f87b0"/><ellipse cx="28" cy="24" rx="4" ry="7" fill="#5f87b0"/><ellipse cx="21" cy="17" rx="7" ry="4" fill="#5f87b0"/><ellipse cx="35" cy="17" rx="7" ry="4" fill="#5f87b0"/><circle cx="28" cy="17" r="3" fill="#c9a03d"/><path d="M44 12 h8 M44 17 h9 M44 22 h8" stroke="#5f87b0" stroke-width="1.6" stroke-linecap="round" opacity=".6"/>`,
+  },
+  {
+    choice: "moving", name: "Moving platform",
+    icon: `<rect x="12" y="15" width="32" height="9" rx="3" fill="#6f8f5c"/><rect x="14" y="17" width="28" height="2" fill="#fff" opacity=".3"/><path d="M4 9 h10 M4 9 l3 -2.5 M4 9 l3 2.5 M52 9 h-10 M52 9 l-3 -2.5 M52 9 l-3 2.5" stroke="#6a655d" stroke-width="1.6" fill="none" stroke-linecap="round"/>`,
+  },
+  {
+    choice: "bomb", name: "Demolition bomb",
+    icon: `<circle cx="26" cy="19" r="10" fill="#2b2a28"/><circle cx="22.5" cy="15.5" r="2.6" fill="#fff" opacity=".3"/><path d="M32 11 Q36 4 41 6" fill="none" stroke="#8f6339" stroke-width="2"/><path d="M41 6 l3 -3 M41 6 l4 0 M41 6 l2 3" stroke="#e0ae45" stroke-width="1.8" stroke-linecap="round"/>`,
   },
 ];
 
@@ -39,8 +49,8 @@ const remaining = (ms: number | null): number | null => (ms === null ? null : Ma
 
 export function buildTray(onChoose: (c: BuildChoice) => void): void {
   el.tray.innerHTML = PIECES.map(
-    (p) => `<button type="button" class="piece${p.choice === "bomb" ? " bomb" : ""}" data-choice="${p.choice}" aria-pressed="false" title="${p.name} (${p.key})">
-      <svg viewBox="0 0 56 32" aria-hidden="true">${p.icon}</svg>${p.name}</button>`,
+    (p, i) => `<button type="button" class="piece${p.choice === "bomb" ? " bomb" : ""}" data-choice="${p.choice}" aria-pressed="false" title="${p.name} (${i + 1})">
+      <svg viewBox="0 0 56 32" aria-hidden="true">${p.icon}</svg><span>${p.name}</span><kbd>${i + 1}</kbd></button>`,
   ).join("");
   el.tray.addEventListener("click", (e) => {
     const b = (e.target as HTMLElement).closest<HTMLButtonElement>(".piece");
@@ -48,66 +58,72 @@ export function buildTray(onChoose: (c: BuildChoice) => void): void {
   });
 }
 
-const STATE_WORDS: Record<string, string> = {
-  WAITING: "building", PLACED: "placed", SKIPPED: "skipped", DISCONNECTED: "away",
-  RUNNING: "running", DEAD: "fell", FINISHED: "made it",
-};
-
-function stateWord(p: PlayerView): string {
-  const snap = store.snap!;
-  if (!p.active) return "watching";
-  if (snap.phase === "BUILD") return STATE_WORDS[p.build];
-  if (snap.phase === "COUNTDOWN" && p.run === "RUNNING") return "ready";
-  return STATE_WORDS[p.run ?? "DISCONNECTED"];
+// what to say about each player now, and whether it is settled
+function status(p: PlayerView, snap: Snapshot): { text: string; cls: string } {
+  if (!p.active) return { text: "watching", cls: "" };
+  switch (snap.phase) {
+    case "BUILD":
+      return { WAITING: { text: "placing…", cls: "wait" }, PLACED: { text: "placed", cls: "ok" }, SKIPPED: { text: "skipped", cls: "ok" }, DISCONNECTED: { text: "away", cls: "out" } }[p.build];
+    case "COUNTDOWN":
+      return { text: p.run === "RUNNING" ? "ready" : "away", cls: p.run === "RUNNING" ? "ok" : "out" };
+    case "LEVEL_END":
+      return p.vote ? { text: p.vote === "ARCHIVE" ? "voted keep" : "voted restart", cls: "ok" } : { text: "deciding…", cls: "wait" };
+    default:
+      return { RUNNING: { text: "running", cls: "wait" }, DEAD: { text: "fell", cls: "out" }, FINISHED: { text: "made it", cls: "ok" }, DISCONNECTED: { text: "away", cls: "out" } }[p.run ?? "DISCONNECTED"];
+  }
 }
 
-const isDone = (p: PlayerView): boolean => {
-  const phase = store.snap!.phase;
-  return phase === "BUILD" ? p.build !== "WAITING" : p.run !== "RUNNING";
-};
-
 const names = (ps: PlayerView[]): string => {
-  const n = ps.map((p) => p.name);
+  const n = ps.map((p) => escape(p.name));
   return n.length <= 2 ? n.join(" and ") : `${n.slice(0, -1).join(", ")} and ${n.at(-1)}`;
 };
+const pts = (n: number): string => (Number.isInteger(n) ? String(n) : n.toFixed(1));
+
+const PHASE_NAMES: Record<string, string> = { BUILD: "Build phase", COUNTDOWN: "Get ready", RUN: "Run phase", RESULTS: "Round end", LEVEL_END: "Game over" };
 
 export function render(): void {
   const snap = store.snap;
   if (!snap) return;
-  el.where.textContent = `Level ${snap.levelId} · Round ${snap.round} of ${snap.maxRounds}`;
+  el.where.textContent = snap.archivedFrom ? `Level ${snap.levelId}, built on level ${snap.archivedFrom}` : `Level ${snap.levelId}`;
+  el.round.textContent = snap.phase === "LEVEL_END" ? "Six rounds done" : `Round ${snap.round} of ${snap.maxRounds}`;
+  el.pill.textContent = PHASE_NAMES[snap.phase];
+  el.pill.className = `pill ${snap.phase === "RUN" || snap.phase === "COUNTDOWN" ? "run" : snap.phase === "BUILD" ? "" : "end"}`;
 
-  const roster = [...snap.players].sort((a, b) => Number(b.active) - Number(a.active));
-  el.roster.innerHTML = roster
-    .map(
-      (p) => `<li class="${p.id === store.me ? "me" : ""} ${isDone(p) ? "done" : ""}"><span class="dot" style="background:${p.colour}"></span>${escape(p.name)}${p.id === store.me ? " (you)" : ""} <span class="state">· ${stateWord(p)}</span></li>`,
-    )
+  const players = [...snap.players].sort((a, b) => Number(b.active) - Number(a.active));
+  el.roster.innerHTML = players
+    .map((p) => {
+      const s = status(p, snap);
+      return `<li class="${p.id === store.me ? "me" : ""} ${p.active ? "" : "watching"}"><span class="dot" style="background:${p.colour}"></span><span class="name">${escape(p.name)}${p.id === store.me ? " (you)" : ""}</span><span class="pts" title="points this game">${pts(p.points)}</span><span class="state ${s.cls}">${s.text}</span></li>`;
+    })
     .join("");
 
-  renderPhase();
-
-  const building = iCanBuild();
-  el.build.hidden = !building;
-  if (building) {
-    const sel = store.sel;
-    for (const b of el.tray.querySelectorAll<HTMLButtonElement>(".piece")) {
-      b.setAttribute("aria-pressed", String(sel.choice === b.dataset.choice));
-      b.disabled = b.dataset.choice === "bomb" && snap.items.length === 0;
-      if (b.disabled) b.title = "Nothing has been placed yet";
-    }
-    el.rotate.disabled = sel.choice !== "platform";
-    el.cancel.disabled = !sel.choice;
-    const bomb = sel.choice === "bomb";
-    el.commit.textContent = bomb ? "Demolish" : "Place";
-    el.commit.classList.toggle("danger", bomb);
-    el.commit.disabled = bomb ? !sel.target : !sel.pinned;
+  for (const li of el.steps.querySelectorAll<HTMLElement>("li")) {
+    const step = li.dataset.step;
+    li.classList.toggle("now", step === snap.phase || (step === "RESULTS" && snap.phase === "LEVEL_END"));
   }
 
+  const building = iCanBuild();
+  el.trayPanel.classList.toggle("idle", !building);
+  const sel = store.sel;
+  for (const b of el.tray.querySelectorAll<HTMLButtonElement>(".piece")) {
+    b.setAttribute("aria-pressed", String(building && sel.choice === b.dataset.choice));
+    b.disabled = !building || (b.dataset.choice === "bomb" && snap.items.length === 0);
+  }
+  const bomb = sel.choice === "bomb";
+  el.rotate.disabled = !building || !sel.choice || bomb || sel.choice === "spring" || sel.choice === "spike";
+  el.cancel.disabled = !building || !sel.choice;
+  el.skip.disabled = !building;
+  el.commit.textContent = bomb ? "Demolish" : "Place";
+  el.commit.classList.toggle("danger", bomb);
+  el.commit.disabled = !building || (bomb ? !sel.target : !sel.pinned);
+
   el.help.innerHTML =
-    snap.phase === "BUILD" && building
-      ? `Choose a piece, then click the level to put it there. <kbd>R</kbd> turns a platform, <kbd>Enter</kbd> places, <kbd>Esc</kbd> cancels. Pieces are permanent once placed.`
+    snap.phase === "BUILD"
+      ? `Choose a piece (<kbd>1</kbd>–<kbd>6</kbd>), click the level to put it there, <kbd>Enter</kbd> to place. <kbd>R</kbd> turns it, <kbd>Esc</kbd> cancels. Pieces are permanent once placed.`
       : snap.phase === "RUN" || snap.phase === "COUNTDOWN"
         ? `<kbd>←</kbd> <kbd>→</kbd> or <kbd>A</kbd> <kbd>D</kbd> to move · <kbd>↑</kbd> <kbd>W</kbd> or <kbd>Space</kbd> to jump · against a wall, jump again to climb it`
         : "";
+  renderPhase();
 }
 
 // the parts that count down are refreshed on a timer, the rest on snapshots
@@ -117,56 +133,88 @@ export function renderPhase(): void {
   const me = myPlayer();
   const active = snap.players.filter((p) => p.active);
   const others = active.filter((p) => p.id !== store.me);
-  let text = "";
+  let guide = "";
   let overlay = "";
+  let tally = "";
 
   switch (snap.phase) {
     case "BUILD": {
       const waiting = others.filter((p) => p.build === "WAITING");
       if (iCanBuild()) {
-        text = snap.round === 1 && snap.items.length === 0
-          ? "Build: the level is bare. Add one piece, or skip and see how it runs."
-          : "Build: add one piece, demolish one, or skip.";
+        guide = snap.round === 1 && snap.items.length === 0
+          ? "The level is bare. Place one piece, or skip and see how it runs. Everyone must finish to start the run."
+          : "Place one piece, use the Demolition Bomb on any piece, or skip. Everyone must finish to start the run.";
         const left = remaining(snap.buildDeadlineMs);
-        if (left !== null) text += `<span class="deadline">auto-skip in ${Math.ceil(left / 1000)} s</span>`;
+        if (left !== null) guide += `<span class="deadline">Auto-skip in ${Math.ceil(left / 1000)} s</span>`;
       } else if (me?.active) {
-        text = waiting.length ? `Waiting for ${escape(names(waiting))} to build…` : "Starting the run…";
+        guide = waiting.length ? `Waiting for ${names(waiting)} to build…` : "Starting the run…";
       } else {
-        text = "Joining…";
+        guide = `The game is full (${snap.maxPlayers} players). You're watching, and take a seat when one frees up.`;
       }
       break;
     }
     case "COUNTDOWN": {
       const left = remaining(snap.phaseRemainingMs) ?? 0;
-      text = me?.active ? "Get ready at the start." : "A run is about to start. You'll join at the next build.";
-      overlay = `<div class="count" data-n="${Math.ceil(left / 1000)}">${Math.max(1, Math.ceil(left / 1000))}</div>`;
+      guide = me?.active ? "Get ready at the start." : "A run is about to start. You'll join at the next build if a seat is free.";
+      overlay = `<div class="count">${Math.max(1, Math.ceil(left / 1000))}</div>`;
       break;
     }
     case "RUN": {
       const running = others.filter((p) => p.run === "RUNNING");
-      if (me?.run === "RUNNING") text = "Run! Reach the flag.";
-      else if (!me?.active) text = "A run is on. You'll join at the next build.";
-      else text = running.length ? `${me.run === "FINISHED" ? "You made it." : "You fell."} Waiting for ${escape(names(running))}…` : "Run over.";
+      if (me?.run === "RUNNING") guide = "Run! Reach the flag. +1 if you make it.";
+      else if (!me?.active) guide = "A run is on. You're watching.";
+      else guide = running.length ? `${me.run === "FINISHED" ? "You made it." : "You fell."} Waiting for ${names(running)}…` : "Run over.";
       break;
     }
     case "RESULTS": {
       const made = active.filter((p) => p.run === "FINISHED");
-      text = snap.levelDone ? "Level complete. A fresh level is next." : `Round ${snap.round} is over. Next: build round ${snap.round + 1}.`;
-      const rows = active
-        .map((p) => `<li><span class="who"><span class="dot" style="background:${p.colour}"></span>${escape(p.name)}</span><span>${STATE_WORDS[p.run ?? "DISCONNECTED"]}</span></li>`)
+      guide = snap.round >= snap.maxRounds ? "That was the last round. Final scores next." : `Next: build round ${snap.round + 1}. The level stays as it is.`;
+      const rows = [...active]
+        .sort((a, b) => b.gained - a.gained || b.points - a.points)
+        .map((p) => `<tr><td><span class="who"><span class="dot" style="background:${p.colour}"></span>${escape(p.name)}</span></td><td>${status(p, snap).text}</td><td class="gain">${p.gained ? `+${pts(p.gained)}` : ""}</td><td>${pts(p.points)}</td></tr>`)
         .join("");
       const summary = made.length === 0 ? "Nobody reached the flag." : made.length === active.length ? "Everyone reached the flag." : `${made.length} of ${active.length} reached the flag.`;
-      overlay = `<div class="card"><h2>${snap.levelDone ? `Level ${snap.levelId} complete` : `Round ${snap.round} of ${snap.maxRounds}`}</h2><p>${summary}</p><ul>${rows}</ul>${
-        snap.levelDone ? "<p>Six rounds built this level. The next one starts bare.</p>" : ""
-      }</div>`;
+      overlay = `<div class="card"><h2>Round ${snap.round} complete</h2><p>${summary}</p><table>${rows}</table></div>`;
+      break;
+    }
+    case "LEVEL_END": {
+      const left = remaining(snap.phaseRemainingMs) ?? 0;
+      const keep = snap.players.filter((p) => p.vote === "ARCHIVE").length;
+      const restart = snap.players.filter((p) => p.vote === "RESTART").length;
+      guide = "Keep this level and build on it next game, or start bare? Majority decides; a tie keeps it.";
+      const rows = snap.scores.length
+        ? snap.scores
+            .map((s, i) => `<tr class="${i === 0 ? "first" : ""}"><td><span class="who"><span class="dot" style="background:${s.colour}"></span>${escape(s.name)}</span></td><td>${s.finishes} flag${s.finishes === 1 ? "" : "s"}</td><td>${s.kills} spiked</td><td>${pts(s.points)}</td></tr>`)
+            .join("")
+        : `<tr><td colspan="4">Nobody scored this game.</td></tr>`;
+      const mine = me?.vote ?? null;
+      overlay = `<div class="card"><h2>Final scores</h2><p>Six rounds on level ${snap.levelId}.</p><table>${rows}</table>
+        <div class="vote">
+          <button type="button" data-vote="ARCHIVE" aria-pressed="${mine === "ARCHIVE"}">Keep building on it</button>
+          <button type="button" data-vote="RESTART" aria-pressed="${mine === "RESTART"}">Start a bare level</button>
+        </div>
+        <p class="tally"></p></div>`;
+      tally = `${keep} keep · ${restart} restart · decided in ${Math.ceil(left / 1000)} s`;
       break;
     }
   }
-  if (el.phase.innerHTML !== text) el.phase.innerHTML = text;
-  // only replace the overlay when it changes, so the countdown animation replays per number
-  const current = el.overlay.innerHTML;
-  if (current !== overlay) el.overlay.innerHTML = overlay;
+  // Replace markup only when it really changes: the countdown animation should
+  // replay once per number, and buttons must not be swapped out under a click.
+  // (Compare with what was generated, not innerHTML, which the browser rewrites.)
+  if (guide !== lastGuide) el.guide.innerHTML = lastGuide = guide;
+  if (overlay !== lastOverlay) el.overlay.innerHTML = lastOverlay = overlay;
+  const t = el.overlay.querySelector(".tally");
+  if (t && t.textContent !== tally) t.textContent = tally;
   el.overlay.hidden = overlay === "";
+}
+let lastGuide = "";
+let lastOverlay = "";
+
+export function onVote(fn: (v: Vote) => void): void {
+  el.overlay.addEventListener("click", (e) => {
+    const b = (e.target as HTMLElement).closest<HTMLButtonElement>("[data-vote]");
+    if (b) fn(b.dataset.vote as Vote);
+  });
 }
 
 export function say(text: string, error = false): void {

@@ -32,29 +32,30 @@ Design rules, detailed in `docs/`:
 
 ## Current state
 
-First playable build-and-run platformer, local only. Not deployed and not
-pushed: the live site and the pushed repo are still the crit 8 machine
-(tag `crit-8`).
+Playable build-and-run platformer, local only. Not deployed and not pushed:
+the live site and the pushed repo are still the crit 8 machine (tag `crit-8`).
 
-- One shared level: a fixed course (START ledge, two islands, a tower that
-  needs a wall climb, GOAL ledge) on a 32×18 grid, all visible at once.
-- BUILD: each player places a Platform (R turns it into a post), Spring or
-  Spike, uses the Bomb on any placed piece, or skips. Click a piece, click the
-  level to pin it (green valid, red with the reason), Enter or Place to
-  commit. Others see your preview in your colour while you decide. AFK:
-  auto-skip after 40 s idle, nobody waits past 120 s.
-- COUNTDOWN 3 s, then RUN: everyone at once, arrows/WASD and jump; wall slide,
-  250 ms wall-jump grace, pressing into a wall climbs it. Spikes and falling
-  kill; the flag finishes. No player collision; others are interpolated.
-  A runner who does not move for 30 s drops out.
-- RESULTS for 3.5 s, then the next BUILD shows where people died. After round
-  6 the level is finished (kept in SQLite) and a fresh one starts.
-- Persistent: level, round, items (demolished items kept as history).
-  Ephemeral: players, positions, statuses, previews, traces.
+- Layout after the human's reference sheet: Parts Tray (left), the level in a
+  wooden display box (middle), round panel with players, status and scores
+  (right), a four-step strip below with the current step lit. Crates with
+  metal brackets, a steel tower, a red flag, jointed figures that stand, run,
+  jump, fall and wall-slide.
+- Up to four players; more watch and take free seats at the next BUILD.
+- BUILD: Platform (R: post), Spring, Spike, Fan (R: four directions, 4-cell
+  wind), Moving Platform (R: sideways or up-down track, 3 s cycle), the Bomb
+  on any piece, or skip. AFK: auto-skip after 40 s idle, 120 s at most.
+- RUN: wall slide, 250 ms wall-jump grace, climb by jumping into a wall;
+  spikes and falls kill; the flag finishes. Idle 30 s drops out.
+- Scores: +1 for the flag, +0.2 to a spike's placer for each other player it
+  kills. RESULTS shows the round's gains.
+- After six rounds: final scores and a vote. Archive (majority, tie or
+  timeout) starts the next game on a copy of the level; restart starts bare.
+  Scores reset per game.
+- Persistent: levels (games), items (demolished kept as history), score
+  events. Ephemeral: players, positions, statuses, previews, traces, votes.
 
-Not built yet: Fan, Moving Platform, sound, most motion polish, activity
-logging. The Dockerfile's new two-stage build has not been run (no Docker
-here); CI will run it when the repo is public.
+Not built yet: sound, most motion polish, activity logging. The two-stage
+Dockerfile has not been run (no Docker here).
 
 ## Still to do (human)
 
@@ -69,9 +70,11 @@ here); CI will run it when the repo is public.
 
 1. ~~Platformer slice, round loop, multiplayer, Bomb (F01–F14, F17)~~ first
    playable version, 2026-10-06.
-2. Human playtest of the first version; tune movement and the base course.
-3. Fan, Moving Platform (F15, F16).
-4. Motion and sound (F18), responsive layout, reconnect robustness.
+2. ~~Fan, Moving Platform, scores, archive/restart, four seats, new layout
+   (F15, F16, F20–F23)~~ 2026-10-06.
+3. Human playtest; tune movement, fan strength, the base course and whether
+   +0.2 per kill crowds out helping.
+4. Motion and sound (F18), reconnect robustness.
 5. Server-side activity logging (F19).
 6. Before deploying: run the Docker build (CI or locally).
 
@@ -89,6 +92,9 @@ Decide through playtesting, not by default:
 - item distribution and tray presentation; whether every item type is always
   selectable;
 - the exact wall-jump grace duration;
+- whether scoring kills (+0.2) makes sabotage dominate (docs/GAME_LOOP.md);
+- whether an archived level fills up over several games, and if the Bomb is
+  enough to clear it;
 - whether previous-round death markers help or clutter.
 
 ## Blockers
@@ -119,3 +125,16 @@ placed post; A sees B interpolated ~38 px behind while moving; six rounds
 rolled over to a fresh level; level, round and items survived a server
 restart; no console errors. Not checked: Docker build, Fly deploy, touch
 input, screen readers, real people.
+
+2026-10-06, local: scores, archive/restart vote, four seats, Fan, Moving
+Platform, new layout. `pnpm typecheck` and `pnpm check` (25 tests) green
+against a separate server (port 8092, throwaway DATA_DIR). Browser
+(Playwright, 1440×900, two players, six full rounds on that server): spike
+kill +0.2 and flag +1 shown as +1.2 in the round card; an up-fan catches a
+falling player and lifts them; a moving platform carries a rider 100 px and
+back; final table lists everyone including zero scores; a 1–1 vote archived
+and the next game started at round 1 with the three items copied and scores
+at zero; the base course still finishes with the scripted route; no console
+errors. Found and fixed: overlay cards were rebuilt every 200 ms (compared
+against browser-rewritten innerHTML), which detached the vote buttons.
+Not checked: Docker build, deploy, touch, screen readers, real people.

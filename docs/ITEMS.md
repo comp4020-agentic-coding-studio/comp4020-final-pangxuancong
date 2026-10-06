@@ -8,8 +8,8 @@ placeables. Keep the pool small.
 | Platform | make or obstruct standable space | static solid collider; bridges, or blocks a jump arc | position; orientation if supported. No resizing for the MVP |
 | Spring | change velocity | contact with its active face sets `velocity.y = springLaunchVelocity`, optionally keeping some horizontal speed | position; orientation later. One consistent, readable bounce, no power slider at first |
 | Spike | lethal area | overlap: RUNNING → DEAD. Always visually obvious, no gore | position |
-| Fan | continuous push | while inside its zone, apply directional acceleration; zone shown subtly while relevant | position, direction; strength later |
-| Moving Platform | timing | solid platform on one deterministic axis (horizontal or vertical) | position, axis. No path editor |
+| Fan | continuous push | a 1×1 fan blowing along one of four directions; inside its 4-cell zone a player is accelerated that way. Only the fan itself occupies space; the zone may cross anything | position; R turns the direction |
+| Moving Platform | timing | a 2-cell plank sliding back and forth along a track (5×1 horizontal, 2×4 vertical) on a fixed 3 s cycle from the start of the run; the whole track is its footprint | position; R switches axis |
 | Demolition Bomb | remove one earlier object | BUILD-phase action, see below; never stays in the level | target |
 
 ## Demolition Bomb
@@ -44,6 +44,13 @@ Gameplay-impossible arrangements are allowed. Reject only when the placement:
 - breaks a basic item-specific constraint.
 
 Never run pathfinding to keep the level completable.
+
+## Kill credit
+
+A Spike remembers who placed it (their player id). When another player dies
+on it, that placer scores +0.2 (`docs/GAME_LOOP.md`). The client reports
+which spike killed it; the server checks the spike exists. Items carried
+into an archived game keep their placer.
 
 ## Shared ownership
 

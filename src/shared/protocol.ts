@@ -2,7 +2,7 @@
 // a whole snapshot whenever it changes: it is small, and a client never has to
 // reconcile partial updates. Movement goes out separately, often and lossy.
 import type { BuildChoice, Item, Proposal } from "./level.ts";
-import type { BuildState, Phase, RunState } from "./rounds.ts";
+import type { BuildState, Phase, RunState, Vote } from "./rounds.ts";
 
 export interface PlayerView {
   id: string;
@@ -12,7 +12,13 @@ export interface PlayerView {
   active: boolean;
   build: BuildState;
   run: RunState | null;
+  points: number; // this game
+  gained: number; // this round, shown in RESULTS
+  vote: Vote | null;
 }
+
+// everyone who scored this game, including people who have since left
+export interface ScoreRow { playerId: string; name: string; colour: string; points: number; finishes: number; kills: number }
 
 export interface Snapshot {
   levelId: number;
@@ -22,9 +28,13 @@ export interface Snapshot {
   // ms left in COUNTDOWN / RESULTS, and in BUILD the auto-skip deadline per
   // player once it is near; measured on the server, so clocks need not agree
   phaseRemainingMs: number | null;
+  phaseElapsedMs: number; // moving platforms keep time from the start of RUN
   buildDeadlineMs: number | null; // for the receiving player only
   levelDone: boolean; // RESULTS after the last round
+  maxPlayers: number;
   players: PlayerView[];
+  scores: ScoreRow[];
+  archivedFrom: number | null; // the level this game continues, if archived
   items: Item[];
   // where players died in the last run, shown during the next BUILD
   traces: { x: number; y: number }[];
@@ -54,7 +64,9 @@ export interface ClientToServer {
   "build:bomb": (targetId: string, ack: Ack) => void;
   "build:skip": (ack: Ack) => void;
   "run:pose": (p: Pose) => void;
-  "run:result": (p: { result: "DEAD" | "FINISHED"; x: number; y: number }) => void;
+  // `by`: the spike that killed this player, if one did
+  "run:result": (p: { result: "DEAD" | "FINISHED"; x: number; y: number; by?: string }) => void;
+  "level:vote": (v: Vote) => void;
 }
 
 export interface ServerToClient {

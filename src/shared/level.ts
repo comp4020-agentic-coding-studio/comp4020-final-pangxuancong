@@ -30,29 +30,59 @@ export const FLAG = { x: 29.5 * CELL, y: 10 * CELL }; // foot of the pole
 // touching this finishes the run
 export const GOAL_TRIGGER: PixelRect = { x: 28.5 * CELL, y: 7.5 * CELL, w: 2 * CELL, h: 2.5 * CELL };
 
-export const ITEM_TYPES = ["platform", "spring", "spike"] as const;
+export const ITEM_TYPES = ["platform", "spring", "spike", "fan", "moving"] as const;
 export type ItemType = (typeof ITEM_TYPES)[number];
 export type BuildChoice = ItemType | "bomb";
 
+// rot: platform and moving platform 0 horizontal / 1 vertical; fan blows
+// 0 right, 1 down, 2 left, 3 up; springs and spikes are always 0
 export interface Item {
   id: string;
   type: ItemType;
   col: number;
   row: number;
-  rot: 0 | 1; // platforms only: 0 horizontal, 1 vertical
+  rot: number;
   createdBy: string; // display name, shown on hover
+  createdById: string; // who scores when this spike kills someone else
   createdRound: number;
 }
 
-export interface Proposal { type: ItemType; col: number; row: number; rot: 0 | 1 }
+export interface Proposal { type: ItemType; col: number; row: number; rot: number }
+type Placed = Pick<Item, "type" | "col" | "row" | "rot">;
 
-export const footprint = (p: Pick<Item, "type" | "col" | "row" | "rot">): CellRect => {
+export const ROTATIONS: Record<ItemType, number> = { platform: 2, spring: 1, spike: 1, fan: 4, moving: 2 };
+
+export const footprint = (p: Placed): CellRect => {
   if (p.type === "platform") return p.rot ? { col: p.col, row: p.row, w: 1, h: 3 } : { col: p.col, row: p.row, w: 3, h: 1 };
+  // a moving platform owns its whole track
+  if (p.type === "moving") return p.rot ? { col: p.col, row: p.row, w: 2, h: 4 } : { col: p.col, row: p.row, w: 5, h: 1 };
   return { col: p.col, row: p.row, w: 1, h: 1 };
 };
 
+// Moving platforms slide along their track on a fixed cycle from the start of
+// the run, the same on every client.
+export const MOVING_PERIOD_MS = 3000;
+export const MOVING_TRAVEL = 3 * CELL;
+export function movingOffset(p: Placed, runMs: number): { dx: number; dy: number } {
+  const k = (1 - Math.cos((2 * Math.PI * runMs) / MOVING_PERIOD_MS)) / 2;
+  return p.rot ? { dx: 0, dy: k * MOVING_TRAVEL } : { dx: k * MOVING_TRAVEL, dy: 0 };
+}
+
+// A fan pushes along its direction across the next four cells.
+export const FAN_REACH = 4;
+export const FAN_DIRS = [{ x: 1, y: 0 }, { x: 0, y: 1 }, { x: -1, y: 0 }, { x: 0, y: -1 }] as const;
+export function fanZone(p: Placed): PixelRect {
+  const d = FAN_DIRS[p.rot % 4];
+  const x = p.col * CELL, y = p.row * CELL, reach = FAN_REACH * CELL;
+  if (d.x === 1) return { x: x + CELL, y, w: reach, h: CELL };
+  if (d.x === -1) return { x: x - reach, y, w: reach, h: CELL };
+  if (d.y === 1) return { x, y: y + CELL, w: CELL, h: reach };
+  return { x, y: y - reach, w: CELL, h: reach };
+}
+
 // The solid or lethal part inside the footprint, in pixels.
-export function body(p: Pick<Item, "type" | "col" | "row" | "rot">): PixelRect {
+// for a moving platform: its plank at the start of the track
+export function body(p: Placed): PixelRect {
   const x = p.col * CELL;
   const y = p.row * CELL;
   switch (p.type) {
@@ -62,6 +92,10 @@ export function body(p: Pick<Item, "type" | "col" | "row" | "rot">): PixelRect {
       return { x: x + 4, y: y + 17, w: 32, h: 23 };
     case "spike": // a little smaller than drawn, so grazing a tip is forgiven
       return { x: x + 8, y: y + 25, w: 24, h: 15 };
+    case "fan": // the housing is solid; the wind is fanZone()
+      return { x: x + 6, y: y + 6, w: 28, h: 28 };
+    case "moving":
+      return { x, y, w: 2 * CELL, h: 20 };
   }
 }
 
@@ -78,9 +112,8 @@ export function placementError(items: readonly Item[], p: unknown): string | nul
   const { type, col, row, rot } = p as Record<string, unknown>;
   if (!isItemType(type)) return "unknown piece";
   if (!Number.isInteger(col) || !Number.isInteger(row)) return "not on the grid";
-  if (rot !== 0 && rot !== 1) return "bad rotation";
-  if (rot === 1 && type !== "platform") return "only platforms turn";
-  const f = footprint({ type, col: col as number, row: row as number, rot });
+  if (!Number.isInteger(rot) || (rot as number) < 0 || (rot as number) >= ROTATIONS[type]) return "bad rotation";
+  const f = footprint({ type, col: col as number, row: row as number, rot: rot as number });
   if (f.col < 0 || f.row < 0 || f.col + f.w > COLS || f.row + f.h > ROWS) return "outside the level";
   if (overlaps(f, START_ZONE)) return "the start must stay clear";
   if (overlaps(f, GOAL_ZONE)) return "the flag must stay clear";

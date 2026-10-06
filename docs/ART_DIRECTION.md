@@ -22,7 +22,8 @@ construction sets (physical clarity).
 
 ## Palette
 
-Warm cream / off-white background; wood or muted neutral base geometry;
+Warm cream / off-white background; base geometry as wooden shelves and
+crates with grey metal brackets and bolts, the tall pieces as steel posts;
 placed items in distinct muted colours with strong silhouettes:
 
 | Item | Colour |
@@ -30,24 +31,30 @@ placed items in distinct muted colours with strong silhouettes:
 | Platform | warm wood |
 | Spring | mustard / brass |
 | Spike | muted dark red |
+| Flag | red cloth, brass pole |
 | Fan | soft blue |
 | Moving Platform | muted green |
 | Bomb | charcoal body, small warm accent |
 
-Existing tokens live in `public/styles.css` (paper, ink, wood, brass, red,
+Tokens live in `src/client/styles.css` and `src/client/draw.ts` (paper, ink, wood, brass, red,
 green, blue). No gradients, glows or neon.
 
 ## Players
 
-Small, simple wooden or paper-like figures, told apart by a colour accent. No
-large avatars or profile cards. Readable when several share a spot; overlap is
-fine since players pass through each other.
+Small jointed figures (round head, limbs) in the player's colour, posed for
+standing, running, jumping and wall sliding, told apart by colour and a name
+label. No large avatars or profile cards. Readable when several share a spot;
+overlap is fine since players pass through each other.
 
 ## Composition
 
-The level takes most of the viewport. The Parts Tray is secondary: a small box
-of physical pieces that look draggable, with a small hover lift. No large app
-cards, sidebars of stats or player lists.
+Three columns on desktop, after the human's reference sheet: a narrow Parts
+Tray on the left (pieces with names, the build actions under them), the
+level in a wooden display box in the middle taking most of the width, and a
+narrow round panel on the right (round, phase, the four players with status
+and score, one line of guidance). Under the level, a four-step strip (build,
+ready, run, round end) with the current step lit. Stacks into one column on
+narrow screens.
 
 ## Build preview
 

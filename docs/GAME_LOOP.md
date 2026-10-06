@@ -5,20 +5,25 @@
 ```text
 BUILD ──(no active player WAITING)──▶ COUNTDOWN ──▶ RUN
   ▲                                                  │
-  └──── RESULTS ◀──────(no active player RUNNING)────┘
+  ├──── RESULTS ◀──────(no active player RUNNING)────┘
+  │        │ after round 6
+  └── LEVEL_END (final scores, vote: archive or restart)
 ```
 
 The level persists across every transition. The server owns the phase.
 
-A level lasts **six rounds**. After round 6's RESULTS the level is finished:
-it stays in the database as history, and a fresh level (base geometry only)
-starts at round 1. Each player adds at most one item per round, so a level
-never holds more than six items per player.
+A game lasts **six rounds** on one level. After round 6 comes LEVEL_END: the
+final scores, and a vote on what happens to the level (below). Each player
+adds at most one item per round.
+
+**At most four players** are on a round. Anyone beyond that spectates, and
+takes a free seat at the next BUILD, in order of arrival.
 
 ## Active round players
 
-The roster is open during BUILD: everyone connected when BUILD starts, plus
-anyone who joins before it ends, is an active player for the round. It closes
+The roster is open during BUILD, up to four players: everyone connected when
+BUILD starts, plus anyone who joins before it ends while a seat is free, is
+an active player for the round. It closes
 at COUNTDOWN; anyone joining during COUNTDOWN, RUN or RESULTS spectates until
 the next BUILD. The AFK timeout below means a late joiner can never hold BUILD
 open for long. (An empty roster would otherwise complete BUILD and RUN
@@ -73,15 +78,37 @@ walked-away player cannot hold RUN forever.
 - **Finish:** reaching the flag trigger. The player stops participating
   physically and may watch. Nobody is required to finish.
 
-When the run completes: RESULTS shows who finished and who fell for about
-3 s (longer after round 6, when the level is finished), every level object is
-kept, characters reset, the round increments, and the next BUILD starts.
+When the run completes: RESULTS shows who finished, who fell and the points
+just earned for about 3.5 s, every level object is kept, characters reset,
+the round increments, and the next BUILD starts (LEVEL_END after round 6).
 
-## No winners
+## Scores (decided by the human, 2026-10-06)
 
-No scoreboard. FINISHED is never converted into points or rankings. What a
-round produces is who found a route, where people failed, and how the level
-changed.
+Within one game of six rounds:
+
+- reaching the flag: **+1** point;
+- each other player killed by a Spike you placed: **+0.2** points. Dying on
+  your own spike scores nothing; falls and fan pushes score nobody.
+
+Scores are shown on the roster during the game and as a final table at
+LEVEL_END. They belong to that one game: no all-time leaderboard, nothing
+carried into the next game, no XP. This rewards sabotage as well as
+finishing, so the game no longer stays neutral between the two; that is a
+deliberate choice, and playtesting should show whether it crowds out
+helping.
+
+## LEVEL_END: archive or restart
+
+After round 6's results everyone connected votes:
+
+- **Archive:** this level is archived with its scores, and the next game
+  starts at round 1 on a copy of it, every surviving item still in place, to
+  keep building on.
+- **Restart:** the next game starts on a bare level.
+
+Majority wins once everyone connected has voted, or after 30 s. A tie or
+no votes means archive, so nobody's work is thrown away by default. Scores
+start from zero either way.
 
 ## Previous-round traces (optional)
 
