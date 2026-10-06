@@ -30,8 +30,18 @@ SQLite (node:sqlite) at $DATA_DIR/chain-reaction.db
   DATA_DIR=/data on Fly (the course volume), ./data locally
 ```
 
-The world is a fixed 1280×720 grid of 40 px cells, scaled to fit, so the whole
-level is visible at once. Phaser and socket.io-client are devDependencies:
+The world is a fixed 48×27 grid of 40 px cells (1920×1080), larger than the
+1280×720 view. During the countdown and RUN the camera follows your own
+runner at full size; otherwise (BUILD, after you finish or die, spectating)
+it is free: wheel to zoom, out to the whole level, right or middle drag or
+the arrow keys to pan. The camera is per client and never shared.
+
+Moving platforms are driven by velocity, not by teleporting, so riders are
+carried. Set that velocity from the track itself (`movingVelocity`, the
+derivative of `movingOffset`) plus a small pull back onto the track. Never
+divide a position gap by the frame time: Arcade steps at its own fixed rate,
+so on a 120 or 144 Hz screen that overshoots and the platform flies about
+(found 2026-10-07; `spec/level.test.ts` checks the derivative). Phaser and socket.io-client are devDependencies:
 they are bundled into `dist/client` at build time, and the production image
 installs only what the server needs. The Dockerfile builds the client in a
 first stage. The crit 8 machine code is gone; the tag `crit-8` keeps it.

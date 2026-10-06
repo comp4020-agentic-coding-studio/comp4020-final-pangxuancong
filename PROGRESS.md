@@ -41,7 +41,10 @@ the live site and the pushed repo are still the crit 8 machine (tag `crit-8`).
   metal brackets, a steel tower, a red flag, jointed figures that stand, run,
   jump, fall and wall-slide.
 - Three courses (The Gaps, The Tower, The Swing), chosen by vote before
-  each game; The Tower and The Swing carry their own fan and swing.
+  each game; The Tower and The Swing carry their own fan and swing. Each is
+  a 48×27 world: the original table along the bottom, a second half that
+  climbs to the flag. The camera follows your runner in RUN; in BUILD it
+  pans (right drag, arrow keys) and zooms (wheel, out to the whole level).
 - Four characters by seat: Chicken, Big Dog, Pot Horse, Dabai. Dust and
   spark particles for running, jumping, landing, wall kicks and springs.
 - Up to four players; more watch and take free seats at the next BUILD.
@@ -79,6 +82,8 @@ Dockerfile has not been run (no Docker here).
    (F15, F16, F20–F23)~~ 2026-10-06.
 3. ~~Three courses with level choice, four characters, particles, final
    score reveal, slower Moving Platform (F24–F27)~~ 2026-10-06.
+   ~~Bigger world with a following camera (F28), Moving Platform fixed on
+   high refresh rate screens~~ 2026-10-07.
 4. Human playtest; tune movement, fan strength, the base course and whether
    +0.2 per kill crowds out helping.
 5. Motion and sound (F18), reconnect robustness.
@@ -157,3 +162,20 @@ and a 2–1 vote for a new level returned to SELECT with no items; no console
 errors. Screenshots looked right (layout, swing rope, reveal). Not checked:
 whether each new course is fun or fair to finish by hand (the solver is
 coarse), particle feel at speed, Docker build, deploy, touch, real people.
+
+2026-10-07, local: Moving Platform speed and a bigger world. The platform
+"shuttling too fast" was a frame-rate bug: its velocity was the position gap
+divided by the frame time, but Arcade steps at a fixed rate, so it overshot
+whenever frames ran faster than physics steps. Reproduced in Playwright by
+slowing physics to 15 steps/s (the plank ranged 102–778 px instead of
+320–440); after the fix the plank stays on 320–440 at 15, 60 and 120
+steps/s and still carries a rider. World now 48×27 cells. `pnpm typecheck`
+and `pnpm check` (37 tests, including all three courses passable) green
+against a separate server (port 8092). Browser, two sessions, each level:
+wheel zoom out to the whole level and back, arrow-key and right-drag pan,
+a spike placed by clicking on a panned and zoomed view landed on the
+intended cell and reached the other session; RUN camera follows within the
+world bounds; a player dropped into the goal finished, one below the world
+died; no console errors. Not checked: a real 120/144 Hz screen, a full hand
+run of each new second half (the solver is coarse), touch (no pinch or
+drag-to-pan yet), real people.

@@ -60,6 +60,10 @@ and score, one line of guidance). Under the level, a four-step strip (build,
 ready, run, round end) with the current step lit. Stacks into one column on
 narrow screens.
 
+The level is bigger than the box: the camera follows your runner during RUN
+and is free to pan and zoom otherwise (`docs/ARCHITECTURE.md`). Zoomed fully
+out, the whole level fits the box.
+
 ## Build preview
 
 The piece lifts slightly; a valid spot gets a subtle positive outline; an

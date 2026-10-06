@@ -2,7 +2,7 @@
 // status and score, one line of guidance), the four-step strip, and the cards
 // that sit over the level between runs (docs/ART_DIRECTION.md).
 import { CHARACTERS } from "../shared/characters.ts";
-import { CELL, type BuildChoice, footprint } from "../shared/level.ts";
+import { CELL, HEIGHT, WIDTH, type BuildChoice, footprint } from "../shared/level.ts";
 import { LEVELS, type LevelDef, levelById } from "../shared/levels.ts";
 import type { PlayerView, Snapshot } from "../shared/protocol.ts";
 import type { Vote } from "../shared/rounds.ts";
@@ -68,12 +68,13 @@ export function courseMap(level: LevelDef): string {
     const x = fp.col * CELL, y = fp.row * CELL;
     if (f.type === "spike") parts.push(`<path d="M${x + 4} ${y + 40} L${x + 20} ${y + 12} L${x + 36} ${y + 40} Z" fill="#b24a3e"/>`);
     else if (f.type === "fan") parts.push(`<circle cx="${x + 20}" cy="${y + 20}" r="16" fill="#5f87b0"/><path d="M${x + 44} ${y + 20} h60" stroke="#5f87b0" stroke-width="6" stroke-dasharray="14 10" opacity=".6"/>`);
+    else if (f.type === "moving" && f.rot) parts.push(`<rect x="${x}" y="${y + 60}" width="80" height="18" rx="4" fill="#6f8f5c"/><path d="M${x + 40} ${y + 10} V${y + fp.h * CELL - 10}" stroke="#6f8f5c" stroke-width="4" opacity=".6"/>`);
     else if (f.type === "moving") parts.push(`<rect x="${x + 60}" y="${y}" width="80" height="18" rx="4" fill="#6f8f5c"/><path d="M${x + 10} ${y + 30} H${x + fp.w * CELL - 10}" stroke="#6f8f5c" stroke-width="4" opacity=".6"/>`);
   }
   const { spawn, flag } = level;
   parts.push(`<rect x="${spawn.x - 24}" y="${spawn.y - 56}" width="48" height="56" rx="6" fill="#6f8f5c" opacity=".35"/>`);
   parts.push(`<path d="M${flag.x} ${flag.y} V${flag.y - 96}" stroke="#c9a03d" stroke-width="7"/><path d="M${flag.x} ${flag.y - 96} l50 18 l-50 18 z" fill="#b24a3e"/>`);
-  return `<svg viewBox="0 0 1280 720" aria-hidden="true"><rect width="1280" height="720" fill="#faf6ee"/>${parts.join("")}</svg>`;
+  return `<svg viewBox="0 0 ${WIDTH} ${HEIGHT}" aria-hidden="true"><rect width="${WIDTH}" height="${HEIGHT}" fill="#faf6ee"/>${parts.join("")}</svg>`;
 }
 
 let receivedAt = 0;
@@ -157,7 +158,7 @@ export function render(): void {
 
   el.help.innerHTML =
     snap.phase === "BUILD"
-      ? `Choose a piece (<kbd>1</kbd>–<kbd>6</kbd>), click the level to put it there, <kbd>Enter</kbd> to place. <kbd>R</kbd> turns it, <kbd>Esc</kbd> cancels. Pieces are permanent once placed.`
+      ? `Choose a piece (<kbd>1</kbd>–<kbd>6</kbd>), click the level to put it there, <kbd>Enter</kbd> to place. <kbd>R</kbd> turns it, <kbd>Esc</kbd> cancels. Pieces are permanent once placed. Look around: scroll to zoom, drag with the right button, or <kbd>←</kbd><kbd>↑</kbd><kbd>→</kbd><kbd>↓</kbd>.`
       : snap.phase === "RUN" || snap.phase === "COUNTDOWN"
         ? `<kbd>←</kbd> <kbd>→</kbd> or <kbd>A</kbd> <kbd>D</kbd> to move · <kbd>↑</kbd> <kbd>W</kbd> or <kbd>Space</kbd> to jump · against a wall, jump again to climb it`
         : "";

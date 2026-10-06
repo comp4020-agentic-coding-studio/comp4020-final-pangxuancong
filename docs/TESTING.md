@@ -34,6 +34,7 @@ also a player, and holds BUILD until they act or the AFK limit passes.
 | S6 | placement inside START or over GOAL rejected; a legal one accepted. Never test completability | only technical validity (P3) | `spec/level.test.ts` |
 | S7 | +1 for finishing, +0.2 to the placer for each other player killed on their spike, nothing for your own spike; scores reset per game | scores stay inside one game | `spec/rounds.test.ts` |
 | S8 | after round 6: majority vote, tie or timeout archives; archive copies the items into the next game, restart starts bare | a finished level can live on | `spec/rounds.test.ts` (vote); copy checked in the browser (2026-10-06) |
+| — | a moving platform's velocity is the derivative of its offset, and its top speed stays under 2 cells a second | readable, frame-rate independent motion | `spec/level.test.ts` |
 | S10 | every course: zones clear of blocks and fixtures, and a coarse grid search reaches GOAL from START on the bare course; a wall course fails | each course starts finishable | `spec/levels.test.ts` |
 | S11 | SELECT: most picks wins, tie goes lower, everyone picked closes early; seated players keep their character | choosing a level | `spec/rounds.test.ts` |
 | S9 | a fifth player spectates and takes a free seat at the next BUILD | small rooms (P10) | `spec/rounds.test.ts` |

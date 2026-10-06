@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { CELL, type Item, MOVING_PERIOD_MS, MOVING_TRAVEL, demolitionError, fanZone, movingOffset, placementError as check } from "../src/shared/level.ts";
+import { CELL, COLS, type Item, MOVING_PERIOD_MS, ROWS, MOVING_TRAVEL, demolitionError, fanZone, movingOffset, movingVelocity, placementError as check } from "../src/shared/level.ts";
 import { LEVELS } from "../src/shared/levels.ts";
 import { MOVEMENT, canWallJump, wallJumpVelocity } from "../src/shared/movement.ts";
 
@@ -19,8 +19,8 @@ it("S6: refuses START, GOAL, solid ground, other pieces and the outside", () => 
   const b = BASE_BLOCKS[1];
   expect(placementError([], { type: "spring", col: b.col, row: b.row, rot: 0 })).toMatch(/solid/);
   expect(placementError([item({})], { type: "spike", col: 9, row: 6, rot: 0 })).toMatch(/another/);
-  expect(placementError([], { type: "platform", col: 30, row: 2, rot: 0 })).toMatch(/outside/);
-  expect(placementError([], { type: "platform", col: 8, row: 16, rot: 1 })).toMatch(/outside/);
+  expect(placementError([], { type: "platform", col: COLS - 2, row: 2, rot: 0 })).toMatch(/outside/);
+  expect(placementError([], { type: "platform", col: 8, row: ROWS - 2, rot: 1 })).toMatch(/outside/);
   for (const bad of [null, {}, { type: "cannon", col: 8, row: 6, rot: 0 }, { type: "spike", col: 8.5, row: 6, rot: 0 }, { type: "spike", col: 8, row: 6, rot: 1 }]) {
     expect(placementError([], bad)).not.toBeNull();
   }
@@ -82,5 +82,19 @@ it("makes a moving platform own its whole track, and move on a fixed cycle", () 
   expect(movingOffset(mover, 0)).toEqual({ dx: 0, dy: 0 });
   expect(movingOffset(mover, MOVING_PERIOD_MS / 2).dx).toBeCloseTo(MOVING_TRAVEL);
   expect(movingOffset({ ...mover, rot: 1 }, MOVING_PERIOD_MS / 2).dy).toBeCloseTo(MOVING_TRAVEL);
-  expect(placementError([], { type: "moving", col: 8, row: 15, rot: 1 })).toMatch(/outside|solid/);
+  expect(placementError([], { type: "moving", col: 8, row: ROWS - 2, rot: 1 })).toMatch(/outside|solid/);
+});
+
+it("drives a moving platform by its track's own velocity, and slowly", () => {
+  // the client sets this velocity directly, so it must be the derivative of the
+  // offset; dividing a position gap by the frame time overshot on 144 Hz screens
+  const mover = item({ id: "m", type: "moving", col: 8, row: 6, rot: 0 });
+  for (const t of [0, 700, 1500, 2600, 4100, 5900]) {
+    const h = 1;
+    const numeric = ((movingOffset(mover, t + h).dx - movingOffset(mover, t - h).dx) / (2 * h)) * 1000;
+    expect(movingVelocity(mover, t).vx).toBeCloseTo(numeric, 3);
+  }
+  expect(movingVelocity({ ...mover, rot: 1 }, 1500).vy).toBeGreaterThan(0);
+  // its top speed stays readable: under 2 cells a second
+  expect(movingVelocity(mover, MOVING_PERIOD_MS / 4).vx).toBeLessThan(2 * CELL);
 });

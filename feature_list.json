@@ -31,6 +31,7 @@
     { "id": "F24", "name": "Three fixed courses and a level vote before each game", "status": "verified", "priority": "core" },
     { "id": "F25", "name": "Four seat characters: Chicken, Big Dog, Pot Horse, Dabai", "status": "verified", "priority": "polish" },
     { "id": "F26", "name": "Run, jump, land and wall particles", "status": "implemented", "priority": "polish" },
-    { "id": "F27", "name": "Final score reveal animation", "status": "verified", "priority": "polish" }
+    { "id": "F27", "name": "Final score reveal animation", "status": "verified", "priority": "polish" },
+    { "id": "F28", "name": "48x27 world with a following RUN camera and a free BUILD camera (pan, zoom)", "status": "verified", "priority": "core" }
   ]
 }

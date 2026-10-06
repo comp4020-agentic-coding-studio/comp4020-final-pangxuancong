@@ -1,6 +1,6 @@
 // The three base courses (docs/GAME_LOOP.md). Each is passable at round 1 with
 // no player pieces (checked in spec/levels.test.ts); what players build after
-// that is up to them. Levels 2 and 3 follow the human's reference drawings.
+// that is up to them. Levels 2 and 3 began from the human's reference drawings.
 // Fixtures are pieces that belong to the course: they work like player pieces
 // but cannot be demolished and score nobody.
 import { CELL, type CellRect, type Item, type ItemType, type PixelRect } from "./level.ts";
@@ -38,81 +38,98 @@ const goalAt = (col: number, row: number): Pick<LevelDef, "goal" | "flag" | "goa
   goalTrigger: { x: (col - 0.5) * CELL, y: (row - 2.5) * CELL, w: 2 * CELL, h: 2.5 * CELL },
 });
 
+// Each course: the original table (the human's drawings) along the bottom
+// of a 48×27 world, then a second half to the right that climbs to the flag.
 export const LEVELS: readonly LevelDef[] = [
   {
     id: 1,
     name: "The Gaps",
-    blurb: "Three gaps and a tower to climb. A good first table.",
+    blurb: "Gaps between crates, two towers to climb. A good first table.",
     blocks: [
-      b(0, 14, 6, 4, "crate"), // start ledge
-      b(10, 14, 3, 4, "crate"),
-      b(16, 12, 3, 6, "crate"),
-      b(22, 9, 2, 9, "post"), // the tower
-      b(27, 10, 5, 8, "crate"), // goal ledge
+      b(0, 23, 6, 4, "crate"), // start ledge
+      b(10, 23, 3, 4, "crate"),
+      b(16, 21, 3, 6, "crate"),
+      b(22, 18, 2, 9, "post"), // the first tower
+      b(27, 19, 5, 8, "crate"),
+      b(34, 21, 3, 6, "crate"),
+      b(39, 15, 2, 12, "post"), // the second tower
+      b(43, 16, 5, 11, "crate"), // goal ledge
     ],
     fixtures: [],
-    start: { col: 0, row: 10, w: 5, h: 4 },
-    spawn: { x: 2 * CELL, y: 14 * CELL },
-    ...goalAt(29, 10),
+    start: { col: 0, row: 19, w: 5, h: 4 },
+    spawn: { x: 2 * CELL, y: 23 * CELL },
+    ...goalAt(45, 16),
     decor: [],
   },
   {
     id: 2,
     name: "The Tower",
-    blurb: "Stairs over spikes, a steel tower, a fan and a hanging swing.",
+    blurb: "Stairs over spikes, a steel tower, a fan, a swing, then a taller tower.",
     blocks: [
-      b(0, 17, 32, 1, "floor"),
-      b(0, 13, 5, 1, "shelf"), b(0, 14, 1, 3, "post"), b(1, 15, 2, 2, "crate"), // start
-      b(3, 16, 2, 1, "shelf"),
-      b(6, 12, 3, 1, "shelf"),
-      b(6, 16, 3, 1, "shelf"),
-      b(9, 13, 4, 1, "shelf"), b(9, 14, 1, 3, "post"), // the spike shelf
-      b(13, 12, 2, 1, "shelf"), b(13, 13, 1, 4, "post"),
-      b(15, 10, 2, 1, "shelf"),
-      b(19, 7, 1, 7, "post"), b(19, 6, 3, 1, "shelf"), // the tower and its cap
-      b(18, 9, 1, 1, "peg"), b(18, 11, 1, 1, "peg"),
-      b(15, 14, 6, 1, "shelf"), b(15, 15, 1, 2, "post"), b(18, 15, 2, 2, "crate"),
-      b(20, 10, 3, 1, "shelf"), // the fan shelf
-      b(22, 13, 4, 1, "shelf"), // the swing's frame
-      b(24, 11, 3, 1, "shelf"),
-      b(27, 10, 5, 1, "shelf"), b(31, 11, 1, 6, "post"), b(28, 15, 2, 2, "crate"), // goal
+      b(0, 26, 48, 1, "floor"),
+      b(0, 22, 5, 1, "shelf"), b(0, 23, 1, 3, "post"), b(1, 24, 2, 2, "crate"), // start
+      b(3, 25, 2, 1, "shelf"),
+      b(6, 21, 3, 1, "shelf"),
+      b(6, 25, 3, 1, "shelf"),
+      b(9, 22, 4, 1, "shelf"), b(9, 23, 1, 3, "post"), // the spike shelf
+      b(13, 21, 2, 1, "shelf"), b(13, 22, 1, 4, "post"),
+      b(15, 19, 2, 1, "shelf"),
+      b(19, 16, 1, 7, "post"), b(19, 15, 3, 1, "shelf"), // the tower and its cap
+      b(18, 18, 1, 1, "peg"), b(18, 20, 1, 1, "peg"),
+      b(15, 23, 6, 1, "shelf"), b(15, 24, 1, 2, "post"), b(18, 24, 2, 2, "crate"),
+      b(20, 19, 3, 1, "shelf"), // the fan shelf
+      b(22, 22, 4, 1, "shelf"), // the swing's frame
+      b(24, 20, 3, 1, "shelf"),
+      b(27, 19, 5, 1, "shelf"), b(31, 20, 1, 6, "post"), b(28, 24, 2, 2, "crate"), // the old goal
+      b(33, 17, 3, 1, "shelf"), b(33, 18, 1, 8, "post"),
+      b(38, 9, 2, 17, "post"), // the tall tower
+      b(42, 10, 6, 1, "shelf"), b(47, 11, 1, 15, "post"), // goal
     ],
-    // the swing hangs from the underside of its frame
-    fixtures: [...spikes(12, 10, 11), fixture("fan", 20, 9, 0), fixture("moving", 22, 15, 0, 13 * CELL + 20)],
-    start: { col: 0, row: 9, w: 4, h: 4 },
-    spawn: { x: 2 * CELL, y: 13 * CELL },
-    ...goalAt(29, 10),
+    // the swing hangs from the underside of its frame; an up-fan under the goal
+    fixtures: [
+      ...spikes(21, 10, 11), fixture("fan", 20, 18, 0), fixture("moving", 22, 24, 0, 22 * CELL + 20),
+      ...spikes(25, 34, 36), fixture("fan", 42, 25, 3),
+    ],
+    start: { col: 0, row: 18, w: 4, h: 4 },
+    spawn: { x: 2 * CELL, y: 22 * CELL },
+    ...goalAt(45, 10),
     decor: [],
   },
   {
     id: 3,
     name: "The Swing",
-    blurb: "A spike pit, a high frame, a swing on a rail and a windy tower.",
+    blurb: "A spike pit, a high frame, a swing on a rail, a windy tower and a lift.",
     blocks: [
-      b(0, 17, 32, 1, "floor"),
-      b(0, 13, 3, 1, "shelf"), b(0, 14, 1, 3, "post"), b(1, 15, 2, 2, "crate"), // start
-      b(3, 14, 2, 1, "peg"),
-      b(5, 13, 2, 1, "peg"),
-      b(7, 12, 2, 1, "peg"),
-      b(10, 15, 2, 1, "shelf"), b(10, 16, 1, 1, "post"),
-      b(10, 11, 1, 1, "peg"),
-      b(11, 9, 1, 1, "peg"),
-      b(12, 8, 1, 9, "post"), b(12, 7, 3, 1, "shelf"), // the frame
-      b(19, 12, 2, 1, "shelf"),
-      b(21, 9, 1, 5, "post"), // the windy tower
-      b(22, 10, 3, 1, "shelf"),
-      b(21, 14, 4, 1, "shelf"), b(21, 15, 1, 2, "post"), b(24, 15, 1, 2, "post"), b(22, 15, 2, 2, "crate"),
-      b(25, 11, 2, 1, "peg"),
-      b(27, 9, 2, 1, "shelf"),
-      b(28, 11, 4, 1, "shelf"), b(31, 12, 1, 5, "post"), b(29, 15, 2, 2, "crate"), // goal
+      b(0, 26, 48, 1, "floor"),
+      b(0, 22, 3, 1, "shelf"), b(0, 23, 1, 3, "post"), b(1, 24, 2, 2, "crate"), // start
+      b(3, 23, 2, 1, "peg"),
+      b(5, 22, 2, 1, "peg"),
+      b(7, 21, 2, 1, "peg"),
+      b(10, 24, 2, 1, "shelf"), b(10, 25, 1, 1, "post"),
+      b(10, 20, 1, 1, "peg"),
+      b(11, 18, 1, 1, "peg"),
+      b(12, 17, 1, 9, "post"), b(12, 16, 3, 1, "shelf"), // the frame
+      b(19, 21, 2, 1, "shelf"),
+      b(21, 18, 1, 5, "post"), // the windy tower
+      b(22, 19, 3, 1, "shelf"),
+      b(21, 23, 4, 1, "shelf"), b(21, 24, 1, 2, "post"), b(24, 24, 1, 2, "post"), b(22, 24, 2, 2, "crate"),
+      b(25, 20, 2, 1, "peg"),
+      b(27, 18, 2, 1, "shelf"),
+      b(28, 20, 4, 1, "shelf"), b(31, 21, 1, 5, "post"), b(29, 24, 2, 2, "crate"), // the old goal
+      b(34, 18, 2, 1, "peg"),
+      b(41, 14, 3, 1, "shelf"),
+      b(44, 10, 1, 16, "post"), b(44, 9, 4, 1, "shelf"), // goal tower
     ],
-    // the swing hangs from the rail
-    fixtures: [...spikes(16, 6, 9), fixture("moving", 14, 13, 0, 10 * CELL), fixture("fan", 22, 9, 0), ...spikes(13, 22, 24)],
-    start: { col: 0, row: 9, w: 3, h: 4 },
-    spawn: { x: 1.5 * CELL, y: 13 * CELL },
-    ...goalAt(30, 11),
+    // the swing hangs from the rail; the lift rides up and down past the pit
+    fixtures: [
+      ...spikes(25, 6, 9), fixture("moving", 14, 22, 0, 19 * CELL), fixture("fan", 22, 18, 0), ...spikes(22, 22, 24),
+      ...spikes(25, 33, 40), fixture("moving", 37, 13, 1),
+    ],
+    start: { col: 0, row: 18, w: 3, h: 4 },
+    spawn: { x: 1.5 * CELL, y: 22 * CELL },
+    ...goalAt(46, 9),
     // the rail the swing hangs from
-    decor: [{ from: [12, 10], to: [21, 10] }],
+    decor: [{ from: [12, 19], to: [21, 19] }],
   },
 ];
 

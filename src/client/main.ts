@@ -4,7 +4,7 @@
 // file never decides a phase, a placement or an outcome.
 import Phaser from "phaser";
 import { io, type Socket } from "socket.io-client";
-import { HEIGHT, ROTATIONS, WIDTH, type BuildChoice } from "../shared/level.ts";
+import { ROTATIONS, VIEW_H, VIEW_W, type BuildChoice } from "../shared/level.ts";
 import { MOVEMENT } from "../shared/movement.ts";
 import type { ClientToServer, ServerToClient } from "../shared/protocol.ts";
 import { LevelScene } from "./scene.ts";
@@ -25,8 +25,8 @@ let sceneReady = false;
 new Phaser.Game({
   type: Phaser.AUTO,
   parent: "game",
-  width: WIDTH,
-  height: HEIGHT,
+  width: VIEW_W,
+  height: VIEW_H,
   backgroundColor: "#f4efe6",
   physics: { default: "arcade", arcade: { gravity: { x: 0, y: MOVEMENT.gravity } } },
   scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },

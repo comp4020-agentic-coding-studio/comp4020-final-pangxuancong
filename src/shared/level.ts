@@ -5,10 +5,13 @@
 import type { LevelDef } from "./levels.ts";
 
 export const CELL = 40;
-export const COLS = 32;
-export const ROWS = 18;
-export const WIDTH = COLS * CELL; // 1280
-export const HEIGHT = ROWS * CELL; // 720
+export const COLS = 48;
+export const ROWS = 27;
+export const WIDTH = COLS * CELL; // 1920
+export const HEIGHT = ROWS * CELL; // 1080
+// the camera's view of it, at zoom 1; RUN follows your own player
+export const VIEW_W = 1280;
+export const VIEW_H = 720;
 // below this a player has fallen out of the world
 export const DEATH_Y = HEIGHT + 40;
 
@@ -53,6 +56,12 @@ export const MOVING_TRAVEL = 3 * CELL;
 export function movingOffset(p: Placed, runMs: number): { dx: number; dy: number } {
   const k = (1 - Math.cos((2 * Math.PI * runMs) / MOVING_PERIOD_MS)) / 2;
   return p.rot ? { dx: 0, dy: k * MOVING_TRAVEL } : { dx: k * MOVING_TRAVEL, dy: 0 };
+}
+// its velocity in px/s at that moment, the derivative of movingOffset
+export function movingVelocity(p: Placed, runMs: number): { vx: number; vy: number } {
+  const w = (2 * Math.PI) / MOVING_PERIOD_MS;
+  const v = (Math.sin(w * runMs) / 2) * w * 1000 * MOVING_TRAVEL;
+  return p.rot ? { vx: 0, vy: v } : { vx: v, vy: 0 };
 }
 
 // A fan pushes along its direction across the next four cells.

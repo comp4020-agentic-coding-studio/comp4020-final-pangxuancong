@@ -5,7 +5,7 @@
 import Phaser from "phaser";
 import {
   CELL, COLS, DEATH_Y, FAN_DIRS, HEIGHT, type Item, type PixelRect, type Proposal, ROWS,
-  WIDTH, body, cellToPixels, fanZone, footprint, movingOffset, placementError,
+  VIEW_H, VIEW_W, WIDTH, body, cellToPixels, fanZone, footprint, movingOffset, movingVelocity, placementError,
 } from "../shared/level.ts";
 import { type Block, type LevelDef, levelById } from "../shared/levels.ts";
 import { MOVEMENT, type Side, canWallJump, wallJumpVelocity } from "../shared/movement.ts";
@@ -17,6 +17,7 @@ const POSE_EVERY_MS = 80; // ~12 a second
 const INTERP_DELAY_MS = 110;
 // characters are drawn a little wider than their collision box, to read at a glance
 const FIGURE_SCALE = 1.3;
+const MOVING_PULL = 6; // per second: how hard a moving platform is pulled back onto its track
 // shelves and pegs are planks: only their top is solid
 const blockBody = (b: Block): PixelRect => {
   const r = cellToPixels(b);
@@ -81,7 +82,12 @@ export class LevelScene extends Phaser.Scene {
   private ghostPiece!: Phaser.GameObjects.Graphics; // my preview's piece, drawn translucent
   private previewLabels = new Map<string, Phaser.GameObjects.Text>();
   private flag!: Phaser.GameObjects.Container;
-  private keys!: Record<"left" | "right" | "up" | "a" | "d" | "w" | "space", Phaser.Input.Keyboard.Key>;
+  private keys!: Record<"left" | "right" | "up" | "down" | "a" | "d" | "w" | "s" | "space", Phaser.Input.Keyboard.Key>;
+  // the camera: following your own runner, or free to pan and zoom
+  private following = false;
+  private dragFrom: { x: number; y: number } | null = null;
+  private pointerInside = false;
+  private lastView = "";
   private phase: Phase | null = null;
   private runStartedAt = 0; // performance.now() when RUN began, for moving platforms
   private spin = 0; // fan blades
@@ -130,15 +136,94 @@ export class LevelScene extends Phaser.Scene {
     const kb = this.input.keyboard!;
     const K = Phaser.Input.Keyboard.KeyCodes;
     this.keys = {
-      left: kb.addKey(K.LEFT), right: kb.addKey(K.RIGHT), up: kb.addKey(K.UP),
-      a: kb.addKey(K.A), d: kb.addKey(K.D), w: kb.addKey(K.W), space: kb.addKey(K.SPACE),
+      left: kb.addKey(K.LEFT), right: kb.addKey(K.RIGHT), up: kb.addKey(K.UP), down: kb.addKey(K.DOWN),
+      a: kb.addKey(K.A), d: kb.addKey(K.D), w: kb.addKey(K.W), s: kb.addKey(K.S), space: kb.addKey(K.SPACE),
     };
 
-    this.input.on("pointermove", (p: Phaser.Input.Pointer) => this.pointerMoved(p.worldX, p.worldY));
-    this.input.on("pointerdown", (p: Phaser.Input.Pointer) => this.pointerDown(p.worldX, p.worldY));
-    this.input.on("gameout", () => this.pointerMoved(-1, -1));
+    // the world is larger than the view: the camera never leaves it
+    this.cameras.main.setBounds(0, 0, WIDTH, HEIGHT);
+    this.lookAtStart();
+    this.input.mouse?.disableContextMenu();
+    // the wheel zooms the level, not the page under it
+    this.game.canvas.addEventListener("wheel", (e) => e.preventDefault(), { passive: false });
+    this.input.on("pointermove", (p: Phaser.Input.Pointer) => {
+      this.pointerInside = true;
+      if (this.dragFrom) {
+        // right or middle drag pans the free camera
+        const cam = this.cameras.main;
+        if (!this.following) cam.setScroll(cam.scrollX - (p.x - this.dragFrom.x) / cam.zoom, cam.scrollY - (p.y - this.dragFrom.y) / cam.zoom);
+        this.dragFrom = { x: p.x, y: p.y };
+        return;
+      }
+      this.pointerMoved(p.worldX, p.worldY);
+    });
+    this.input.on("pointerdown", (p: Phaser.Input.Pointer) => {
+      if (p.rightButtonDown() || p.middleButtonDown()) this.dragFrom = { x: p.x, y: p.y };
+      else this.pointerDown(p.worldX, p.worldY);
+    });
+    this.input.on("pointerup", () => (this.dragFrom = null));
+    this.input.on("wheel", (p: Phaser.Input.Pointer, _over: unknown, _dx: number, dy: number) => this.zoomAt(p, dy));
+    this.input.on("gameout", () => {
+      this.pointerInside = false;
+      this.dragFrom = null;
+      this.pointerMoved(-1, -1);
+    });
 
     this.onReady();
+  }
+
+  // ---------- the camera ----------
+
+  // zoomed right out the whole world fits the view
+  private readonly minZoom = Math.min(VIEW_W / WIDTH, VIEW_H / HEIGHT);
+
+  private lookAtStart(): void {
+    const cam = this.cameras.main;
+    cam.setZoom(1);
+    cam.centerOn(this.course.spawn.x + VIEW_W / 4, this.course.spawn.y - VIEW_H / 4);
+  }
+
+  // the wheel zooms the free camera, keeping the point under the pointer still
+  private zoomAt(p: Phaser.Input.Pointer, dy: number): void {
+    if (this.following) return;
+    const cam = this.cameras.main;
+    const zoom = Phaser.Math.Clamp(cam.zoom * (dy > 0 ? 0.9 : 1 / 0.9), this.minZoom, 1.25);
+    const before = cam.getWorldPoint(p.x, p.y);
+    cam.setZoom(zoom);
+    cam.preRender();
+    const after = cam.getWorldPoint(p.x, p.y);
+    cam.setScroll(cam.scrollX + before.x - after.x, cam.scrollY + before.y - after.y);
+  }
+
+  // RUN (and the countdown before it) follows your own runner at full size;
+  // otherwise the camera is yours to move
+  private steerCamera(dt: number): void {
+    const cam = this.cameras.main;
+    const follow = !!this.local && (this.phase === "COUNTDOWN" || (this.phase === "RUN" && this.local.live));
+    if (follow !== this.following) {
+      this.following = follow;
+      if (follow && this.local) {
+        cam.zoomTo(1, reducedMotion.matches ? 0 : 300);
+        cam.startFollow(this.local.rect, false, 0.12, 0.12);
+      } else cam.stopFollow();
+    }
+    if (!follow) {
+      const k = this.keys;
+      const dx = (k.right.isDown || k.d.isDown ? 1 : 0) - (k.left.isDown || k.a.isDown ? 1 : 0);
+      const dy = (k.down.isDown || k.s.isDown ? 1 : 0) - (k.up.isDown || k.w.isDown ? 1 : 0);
+      const speed = (700 * dt) / cam.zoom;
+      if (dx || dy) cam.setScroll(cam.scrollX + dx * speed, cam.scrollY + dy * speed);
+    }
+    // the view moved under a still pointer: what it points at changed
+    const view = `${cam.scrollX.toFixed(1)},${cam.scrollY.toFixed(1)},${cam.zoom.toFixed(3)}`;
+    if (view !== this.lastView) {
+      this.lastView = view;
+      if (this.pointerInside && !this.dragFrom && this.phase === "BUILD") {
+        const p = this.input.activePointer;
+        p.updateWorldPoint(cam);
+        this.pointerMoved(p.worldX, p.worldY);
+      }
+    }
   }
 
   // ---------- the fixed course ----------
@@ -239,6 +324,7 @@ export class LevelScene extends Phaser.Scene {
     if (snap.layout !== this.courseLayout) {
       this.clearCharacters();
       this.buildCourse(levelById(snap.layout));
+      this.lookAtStart();
     }
     // the course's own pieces work exactly like placed ones
     this.syncItems([...this.course.fixtures, ...snap.items]);
@@ -632,6 +718,7 @@ export class LevelScene extends Phaser.Scene {
       this.redrawLocal("stand", time);
     }
     this.drawRemotes(time);
+    this.steerCamera(delta / 1000);
   }
 
   // fans spin, moving platforms slide (and carry whoever rides them)
@@ -648,8 +735,13 @@ export class LevelScene extends Phaser.Scene {
         const o = movingOffset(it, runMs);
         const rb = pv.solid.body as Phaser.Physics.Arcade.Body;
         const tx = b.x + o.dx, ty = b.y + o.dy;
-        if (this.phase === "RUN" && dt > 0) rb.setVelocity((tx - rb.x) / dt, (ty - rb.y) / dt);
-        else {
+        if (this.phase === "RUN" && dt > 0) {
+          // Physics steps at its own fixed rate, not once per frame, so drive by
+          // the track's own velocity plus a gentle pull back onto it; dividing
+          // the gap by the frame time overshoots on high refresh rate screens.
+          const v = movingVelocity(it, runMs);
+          rb.setVelocity(v.vx + (tx - rb.x) * MOVING_PULL, v.vy + (ty - rb.y) * MOVING_PULL);
+        } else {
           rb.reset(tx + b.w / 2, ty + b.h / 2);
           rb.setVelocity(0, 0);
         }
