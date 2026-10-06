@@ -1,9 +1,19 @@
-# Your app
+# Chain Reaction
 
-<!-- TEMPLATE: this file is yours, and the deployed app publishes it in full at
-     /readme/, where visitors and markers read it. The final project brief says
-     what it covers. Replace everything in it, this comment included. -->
+<!-- DRAFT: written by the human, not the agent. The final version runs to
+     400–600 words (final project brief). Headings are a suggested shape; the
+     /readme/ check only needs whatever headings exist here to be on the page. -->
 
-Images are committed to the repo and linked relatively ---
-`![alt](docs/before.png)` --- so they render on GitHub; making them resolve at
-`/readme/` too is your app's job.
+_A first version is being written for the crit 8 cutoff._
+
+## What good means here
+
+## Failure should invite another attempt
+
+## The shared object should outlive the participants
+
+## What is enforced and what is judged
+
+## What I chose not to build
+
+## Design references
