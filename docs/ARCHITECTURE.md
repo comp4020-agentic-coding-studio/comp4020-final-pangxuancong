@@ -1,18 +1,36 @@
 # Architecture
 
-## Now (crit 8 machine prototype, the migration source)
+## Now
 
 ```text
-Browser (public/): plain JS, SVG machine, animates server run plans
-Server (src/server/main.ts, Express): bounded ramp angle, run lock,
-  deterministic simulation (src/shared/simulation.ts), /readme/ via marked
+Browser (src/client, built by Vite)
+├── index.html + styles.css: header, roster, phase line, Parts Tray, overlays
+├── main.ts: identity (sessionStorage), socket, keyboard, build actions
+├── ui.ts: renders the HTML shell from the snapshot
+├── scene.ts: Phaser scene: level, items, previews, local player (Arcade
+│   Physics), remote players (interpolated), traces
+└── draw.ts: how every piece looks
+        │ Socket.IO: snapshot (whole shared state on every change),
+        │ build:preview/commit/bomb/skip, run:pose (~12/s, volatile), run:result
+Server (src/server, TypeScript run directly by Node)
+├── main.ts: Express, /readme/, /api/level, Vite middleware in dev,
+│   dist/client in production
+├── game.ts: round clock (200 ms tick), roster, item validation, sockets
+└── db.ts: the only code that touches SQLite
+Shared (src/shared, imported by both and by spec/)
+├── level.ts: grid, base course, START/GOAL zones, placement + demolition rules
+├── rounds.ts: the round state machine, pure
+├── movement.ts: movement constants and the wall-jump rule
+└── protocol.ts: socket event types
 SQLite (node:sqlite) at $DATA_DIR/chain-reaction.db
   DATA_DIR=/data on Fly (the course volume), ./data locally
 ```
 
-Node runs the TypeScript server directly (type stripping): no build step, and
-the Dockerfile relies on that. The machine gameplay is deprecated
-(`docs/MIGRATION.md`); the server, SQLite, `/readme/` and deploy carry over.
+The world is a fixed 1280×720 grid of 40 px cells, scaled to fit, so the whole
+level is visible at once. Phaser and socket.io-client are devDependencies:
+they are bundled into `dist/client` at build time, and the production image
+installs only what the server needs. The Dockerfile builds the client in a
+first stage. The crit 8 machine code is gone; the tag `crit-8` keeps it.
 
 ## Target
 
@@ -59,21 +77,22 @@ server does not simulate player physics.
 
 ## State boundary
 
-Persistent (SQLite), conceptual only; don't over-normalise:
+Persistent (SQLite):
 
 ```sql
-levels(id, round_number, created_at, updated_at)
-placed_items(id, level_id, type, x, y, rotation, params_json,
-             created_by, created_round, created_at)
-round_summaries(level_id, round_number, summary_json)  -- optional
+level(id, round, finished_at, created_at, updated_at)
+placed_item(id, level_id, type, col, row, rot, created_by, created_round,
+            created_at, destroyed_by, destroyed_round, destroyed_at)
 ```
 
-Optional later: last-round death markers.
+A demolished item keeps its row with `destroyed_*` set: history, not state.
+A finished level keeps its items. Old crit 8 tables (`mechanism`, `attempt`)
+may remain in an old database; nothing reads them.
 
 Ephemeral (process memory, never SQLite): player position and velocity,
 alive/dead state, build previews, socket ids, the current roster, selections,
-interpolation state. After a server restart the level reloads and the session
-safely returns to BUILD.
+interpolation state, last-run death traces. After a server restart the level
+reloads and the session safely returns to BUILD.
 
 ## Build validation
 

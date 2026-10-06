@@ -1,0 +1,628 @@
+// The level, drawn and played. The server decides what is in the level and
+// whose turn it is; this scene draws that, lets this player preview a piece,
+// and simulates only this player's own character (docs/MOVEMENT.md). Other
+// characters are interpolated from their snapshots and never collide.
+import Phaser from "phaser";
+import {
+  BASE_BLOCKS, CELL, COLS, DEATH_Y, FLAG, GOAL_TRIGGER, GOAL_ZONE, HEIGHT, type Item, type Proposal, ROWS,
+  SPAWN, START_ZONE, WIDTH, body, cellToPixels, footprint, placementError,
+} from "../shared/level.ts";
+import { MOVEMENT, type Side, canWallJump, wallJumpVelocity } from "../shared/movement.ts";
+import type { Phase } from "../shared/rounds.ts";
+import { C, drawBlock, drawFigure, drawItem, hex } from "./draw.ts";
+import { bus, iCanBuild, store } from "./state.ts";
+
+const POSE_EVERY_MS = 80; // ~12 a second
+const INTERP_DELAY_MS = 110;
+const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+interface PlacedView {
+  item: Item;
+  view: Phaser.GameObjects.Container;
+  solid: Phaser.GameObjects.Rectangle;
+}
+
+interface Remote {
+  view: Phaser.GameObjects.Container;
+  figure: Phaser.GameObjects.Graphics;
+  label: Phaser.GameObjects.Text;
+  colour: number;
+  facing: -1 | 1;
+  samples: { t: number; x: number; y: number; facing: -1 | 1 }[];
+  gone: boolean;
+}
+
+interface Local {
+  rect: Phaser.GameObjects.Rectangle; // the physics body
+  view: Phaser.GameObjects.Container;
+  figure: Phaser.GameObjects.Graphics;
+  colour: number;
+  facing: -1 | 1;
+  lastWallTouchAt: number | null;
+  lastWallSide: Side;
+  wasOnGround: boolean;
+  live: boolean; // simulating; false once dead or finished
+  lastPoseAt: number;
+}
+
+export class LevelScene extends Phaser.Scene {
+  private solids!: Phaser.Physics.Arcade.StaticGroup;
+  private springs!: Phaser.Physics.Arcade.StaticGroup;
+  private spikes!: Phaser.Physics.Arcade.StaticGroup;
+  private goal!: Phaser.GameObjects.Zone;
+  private placed = new Map<string, PlacedView>();
+  private remotes = new Map<string, Remote>();
+  private local: Local | null = null;
+  private buildLayer!: Phaser.GameObjects.Graphics; // grid and protected zones, BUILD only
+  private traceLayer!: Phaser.GameObjects.Graphics;
+  private ghost!: Phaser.GameObjects.Graphics;
+  private ghostPiece!: Phaser.GameObjects.Graphics; // my preview's piece, drawn translucent
+  private previewLabels = new Map<string, Phaser.GameObjects.Text>();
+  private flag!: Phaser.GameObjects.Container;
+  private keys!: Record<"left" | "right" | "up" | "a" | "d" | "w" | "space", Phaser.Input.Keyboard.Key>;
+  private phase: Phase | null = null;
+  // set by main.ts; called once the scene exists
+  onReady = (): void => {};
+
+  constructor() {
+    super("level");
+  }
+
+  create(): void {
+    this.physics.world.setBounds(0, -600, WIDTH, HEIGHT + 1200);
+    this.physics.world.setBoundsCollision(true, true, false, false);
+    this.solids = this.physics.add.staticGroup();
+    this.springs = this.physics.add.staticGroup();
+    this.spikes = this.physics.add.staticGroup();
+
+    this.buildLayer = this.add.graphics().setDepth(0);
+    this.traceLayer = this.add.graphics().setDepth(1);
+    this.drawFixtures();
+    this.ghost = this.add.graphics().setDepth(20);
+    this.ghostPiece = this.add.graphics().setDepth(20);
+
+    const kb = this.input.keyboard!;
+    const K = Phaser.Input.Keyboard.KeyCodes;
+    this.keys = {
+      left: kb.addKey(K.LEFT), right: kb.addKey(K.RIGHT), up: kb.addKey(K.UP),
+      a: kb.addKey(K.A), d: kb.addKey(K.D), w: kb.addKey(K.W), space: kb.addKey(K.SPACE),
+    };
+
+    this.input.on("pointermove", (p: Phaser.Input.Pointer) => this.pointerMoved(p.worldX, p.worldY));
+    this.input.on("pointerdown", (p: Phaser.Input.Pointer) => this.pointerDown(p.worldX, p.worldY));
+    this.input.on("gameout", () => this.pointerMoved(-1, -1));
+
+    this.onReady();
+  }
+
+  // ---------- the fixed course ----------
+
+  private drawFixtures(): void {
+    // the desk: faint ruled paper, and a soft dark fall-off at the bottom so
+    // the gaps between blocks read as somewhere you can fall
+    const desk = this.add.graphics().setDepth(-1);
+    desk.lineStyle(1, C.blue, 0.05);
+    for (let y = CELL * 2; y < HEIGHT; y += CELL * 2) desk.lineBetween(0, y, WIDTH, y);
+    for (let i = 0; i < 6; i++) {
+      desk.fillStyle(C.ink, 0.035 * (i + 1));
+      desk.fillRect(0, HEIGHT - 6 * (6 - i), WIDTH, 6);
+    }
+    const g = this.add.graphics().setDepth(5);
+    for (const b of BASE_BLOCKS) {
+      const r = cellToPixels(b);
+      drawBlock(g, r.x, r.y, r.w, r.h);
+      this.addSolid(this.solids, r.x, r.y, r.w, r.h);
+    }
+
+    // START: a small painted sign on the ledge
+    const sign = this.add.graphics().setDepth(4);
+    sign.fillStyle(C.woodDeep, 1);
+    sign.fillRect(SPAWN.x + 70, SPAWN.y - 44, 4, 44);
+    sign.fillStyle(C.paper, 1);
+    sign.lineStyle(2, C.woodDeep, 1);
+    sign.fillRoundedRect(SPAWN.x + 46, SPAWN.y - 62, 52, 22, 4);
+    sign.strokeRoundedRect(SPAWN.x + 46, SPAWN.y - 62, 52, 22, 4);
+    this.add.text(SPAWN.x + 72, SPAWN.y - 51, "START", { fontFamily: "system-ui, sans-serif", fontSize: "11px", fontStyle: "bold", color: "#6a655d" })
+      .setOrigin(0.5).setDepth(4);
+
+    // GOAL: a brass pole and a cloth flag that stirs
+    const pole = this.add.graphics().setDepth(6);
+    pole.fillStyle(C.ink, 0.1);
+    pole.fillEllipse(FLAG.x + 2, FLAG.y + 1, 22, 5);
+    pole.fillStyle(C.brass, 1);
+    pole.fillRect(FLAG.x - 2, FLAG.y - 92, 4, 92);
+    pole.fillCircle(FLAG.x, FLAG.y - 94, 4);
+    const cloth = this.add.graphics();
+    cloth.fillStyle(C.green, 1);
+    cloth.fillTriangle(0, 0, 0, 30, 44, 15);
+    cloth.fillStyle(0xffffff, 0.18);
+    cloth.fillTriangle(0, 2, 0, 12, 22, 8);
+    this.flag = this.add.container(FLAG.x + 2, FLAG.y - 90, [cloth]).setDepth(6);
+    if (!reducedMotion.matches) this.tweens.add({ targets: this.flag, scaleX: 0.88, duration: 900, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+
+    const t = GOAL_TRIGGER;
+    this.goal = this.add.zone(t.x + t.w / 2, t.y + t.h / 2, t.w, t.h);
+    this.physics.add.existing(this.goal, true);
+  }
+
+  private addSolid(group: Phaser.Physics.Arcade.StaticGroup, x: number, y: number, w: number, h: number): Phaser.GameObjects.Rectangle {
+    const r = this.add.rectangle(x + w / 2, y + h / 2, w, h).setVisible(false);
+    this.physics.add.existing(r, true);
+    group.add(r);
+    return r;
+  }
+
+  // ---------- following the server ----------
+
+  applySnapshot(): void {
+    const snap = store.snap;
+    if (!snap) return;
+    this.syncItems(snap.items);
+    if (snap.phase !== this.phase) this.enterPhase(snap.phase);
+    this.syncPlayers();
+    this.drawBuildLayer();
+  }
+
+  private enterPhase(phase: Phase): void {
+    const before = this.phase;
+    this.phase = phase;
+    if (phase === "BUILD") {
+      this.clearCharacters();
+    }
+    if (phase === "COUNTDOWN" || (phase === "RUN" && before !== "COUNTDOWN")) this.placeAtStart(phase === "RUN");
+    if (phase === "RUN") this.release();
+    this.ghost.clear();
+    this.ghostPiece.clear();
+    for (const l of this.previewLabels.values()) l.destroy();
+    this.previewLabels.clear();
+  }
+
+  private amRunning(): boolean {
+    return store.snap?.players.find((p) => p.id === store.me)?.run === "RUNNING";
+  }
+
+  private syncItems(items: Item[]): void {
+    const ids = new Set(items.map((i) => i.id));
+    for (const [id, pv] of this.placed) {
+      if (ids.has(id)) continue;
+      // demolished: a small pop, then gone
+      this.placed.delete(id);
+      pv.solid.destroy();
+      if (reducedMotion.matches) pv.view.destroy();
+      else this.tweens.add({ targets: pv.view, scaleX: 1.15, scaleY: 1.15, alpha: 0, duration: 260, ease: "Back.in", onComplete: () => pv.view.destroy() });
+      this.puff(pv.view.x + 20, pv.view.y - 10, C.woodDark);
+    }
+    for (const item of items) {
+      if (this.placed.has(item.id)) continue;
+      const f = footprint(item);
+      const g = this.add.graphics();
+      drawItem(g, item.type, item.rot, 0, 0);
+      const view = this.add.container(f.col * CELL, (f.row + f.h) * CELL, [g]).setDepth(item.type === "spike" ? 9 : 8);
+      const b = body(item);
+      const group = item.type === "spring" ? this.springs : item.type === "spike" ? this.spikes : this.solids;
+      const solid = this.addSolid(group, b.x, b.y, b.w, b.h);
+      this.placed.set(item.id, { item, view, solid });
+      // newly committed while we watch: it settles into place
+      if (this.phase && !reducedMotion.matches) {
+        view.y -= 14;
+        view.alpha = 0.3;
+        this.tweens.add({ targets: view, y: view.y + 14, alpha: 1, duration: 280, ease: "Back.out" });
+      }
+    }
+  }
+
+  private drawBuildLayer(): void {
+    const g = this.buildLayer;
+    const t = this.traceLayer;
+    g.clear();
+    t.clear();
+    const snap = store.snap;
+    if (snap?.phase !== "BUILD") return;
+    // a faint grid of dots: only while building
+    g.fillStyle(C.ink, 0.12);
+    for (let c = 1; c < COLS; c++) for (let r = 1; r < ROWS; r++) g.fillCircle(c * CELL, r * CELL, 1.2);
+    // protected areas, shown only while relevant
+    for (const z of [START_ZONE, GOAL_ZONE]) {
+      const r = cellToPixels(z);
+      g.fillStyle(C.green, 0.06);
+      g.fillRoundedRect(r.x + 2, r.y + 2, r.w - 4, r.h - 4, 8);
+      g.lineStyle(1.5, C.green, 0.35);
+      g.strokeRoundedRect(r.x + 2, r.y + 2, r.w - 4, r.h - 4, 8);
+    }
+    // where people fell last run
+    t.lineStyle(2.5, C.ink, 0.5);
+    for (const { x, y } of snap.traces) {
+      const cy = Math.min(y, HEIGHT - 12);
+      t.lineBetween(x - 6, cy - 6, x + 6, cy + 6);
+      t.lineBetween(x - 6, cy + 6, x + 6, cy - 6);
+    }
+  }
+
+  // ---------- characters ----------
+
+  private colourOf(id: string): number {
+    const p = store.snap?.players.find((q) => q.id === id);
+    return p ? hex(p.colour) : C.inkSoft;
+  }
+
+  // Everyone starts at START, nudged apart a little so all are visible.
+  private spawnFor(id: string): { x: number; y: number } {
+    const active = (store.snap?.players ?? []).filter((p) => p.active);
+    const i = Math.max(0, active.findIndex((p) => p.id === id));
+    return { x: SPAWN.x - 40 + (i % 6) * 18, y: SPAWN.y };
+  }
+
+  private placeAtStart(live: boolean): void {
+    this.clearCharacters();
+    const snap = store.snap!;
+    for (const p of snap.players) {
+      if (!p.active || p.run !== "RUNNING") continue;
+      const at = this.spawnFor(p.id);
+      if (p.id === store.me) this.createLocal(at.x, at.y, live);
+      else {
+        const r = this.ensureRemote(p.id);
+        r.samples = [{ t: performance.now(), x: at.x, y: at.y, facing: 1 }];
+        r.view.setPosition(at.x, at.y);
+      }
+    }
+  }
+
+  private createLocal(x: number, y: number, live: boolean): void {
+    const colour = this.colourOf(store.me);
+    const rect = this.add.rectangle(x, y - 14, 22, 28).setVisible(false);
+    this.physics.add.existing(rect);
+    const b = rect.body as Phaser.Physics.Arcade.Body;
+    b.setCollideWorldBounds(true);
+    b.setMaxVelocity(1000, MOVEMENT.maxFallSpeed);
+    b.setAllowGravity(live);
+    const figure = this.add.graphics();
+    drawFigure(figure, colour, 1);
+    // a small marker so you can find yourself among several
+    const you = this.add.triangle(0, -40, 0, 0, 10, 0, 5, 7, colour).setOrigin(0.5);
+    const view = this.add.container(x, y, [figure, you]).setDepth(15);
+    this.local = { rect, view, figure, colour, facing: 1, lastWallTouchAt: null, lastWallSide: 1, wasOnGround: false, live, lastPoseAt: 0 };
+    this.physics.add.collider(rect, this.solids);
+    this.physics.add.collider(rect, this.springs, (_p, s) => this.bounce(s as Phaser.GameObjects.Rectangle));
+    this.physics.add.overlap(rect, this.spikes, () => this.die());
+    this.physics.add.overlap(rect, this.goal, () => this.finish());
+  }
+
+  private ensureRemote(id: string): Remote {
+    let r = this.remotes.get(id);
+    if (r) return r;
+    const colour = this.colourOf(id);
+    const figure = this.add.graphics();
+    drawFigure(figure, colour, 1);
+    const name = store.snap?.players.find((p) => p.id === id)?.name ?? "";
+    const label = this.add.text(0, -44, name, { fontFamily: "system-ui, sans-serif", fontSize: "11px", color: "#6a655d" }).setOrigin(0.5);
+    const view = this.add.container(0, 0, [figure, label]).setDepth(12).setAlpha(0.9);
+    r = { view, figure, label, colour, facing: 1, samples: [], gone: false };
+    this.remotes.set(id, r);
+    return r;
+  }
+
+  private syncPlayers(): void {
+    const snap = store.snap!;
+    if (snap.phase !== "RUN" && snap.phase !== "RESULTS") return;
+    for (const p of snap.players) {
+      if (p.id === store.me) {
+        // the server may end my run (an idle tab); stop simulating if so
+        if (this.local?.live && p.run !== "RUNNING") {
+          if (p.run === "DEAD") this.die(true);
+          else this.local.live = false;
+        }
+        continue;
+      }
+      const r = this.remotes.get(p.id);
+      if (!r || r.gone) continue;
+      if (p.run === "DEAD" || p.run === "DISCONNECTED") {
+        r.gone = true;
+        this.puff(r.view.x, r.view.y - 14, r.colour);
+        r.view.destroy();
+        this.remotes.delete(p.id);
+      } else if (p.run === "FINISHED") {
+        r.gone = true;
+        this.tweens.add({ targets: r.view, alpha: 0.45, duration: 400 });
+      }
+    }
+  }
+
+  onRemotePose(id: string, x: number, y: number, facing: -1 | 1): void {
+    if (this.phase !== "RUN") return;
+    const p = store.snap?.players.find((q) => q.id === id);
+    if (!p || p.run !== "RUNNING") return;
+    const r = this.ensureRemote(id);
+    r.samples.push({ t: performance.now(), x, y, facing });
+    if (r.samples.length > 20) r.samples.shift();
+  }
+
+  private clearCharacters(): void {
+    if (this.local) {
+      this.local.rect.destroy();
+      this.local.view.destroy();
+      this.local = null;
+    }
+    for (const r of this.remotes.values()) r.view.destroy();
+    this.remotes.clear();
+  }
+
+  private bounce(spring: Phaser.GameObjects.Rectangle): void {
+    const l = this.local;
+    if (!l?.live) return;
+    const b = l.rect.body as Phaser.Physics.Arcade.Body;
+    const top = (spring.body as Phaser.Physics.Arcade.StaticBody).top;
+    if (b.bottom > top + 6) return; // only the pad launches
+    b.setVelocityY(-MOVEMENT.springVelocity);
+    const pv = [...this.placed.values()].find((v) => v.solid === spring);
+    if (pv && !reducedMotion.matches) this.tweens.add({ targets: pv.view, scaleY: 0.6, duration: 70, yoyo: true, ease: "Quad.out" });
+  }
+
+  private die(fromServer = false): void {
+    const l = this.local;
+    if (!l?.live) return;
+    l.live = false;
+    const x = l.rect.x, y = l.rect.y + 14;
+    if (!fromServer) bus.result({ result: "DEAD", x, y: Math.min(y, HEIGHT) });
+    this.puff(x, Math.min(y, HEIGHT - 10) - 14, l.colour);
+    l.rect.destroy();
+    l.view.destroy();
+    this.local = null;
+    bus.say(fromServer ? "You stood still too long and dropped out of this run." : "You fell. Watch how the others do.");
+  }
+
+  private finish(): void {
+    const l = this.local;
+    if (!l?.live) return;
+    l.live = false;
+    // no more input, but it still drops onto the ledge by the flag
+    (l.rect.body as Phaser.Physics.Arcade.Body).setVelocityX(0);
+    bus.result({ result: "FINISHED", x: l.rect.x, y: l.rect.y + 14 });
+    if (!reducedMotion.matches) {
+      this.tweens.add({ targets: l.figure, y: -18, duration: 180, yoyo: true, ease: "Quad.out" });
+      this.tweens.add({ targets: this.flag, scaleY: 1.2, duration: 160, yoyo: true });
+    }
+    bus.say("You reached the flag.");
+  }
+
+  private puff(x: number, y: number, colour: number): void {
+    if (reducedMotion.matches) return;
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const dot = this.add.circle(x, y, 4, i % 2 ? colour : C.inkSoft, 0.7).setDepth(16);
+      this.tweens.add({ targets: dot, x: x + Math.cos(a) * 20, y: y + Math.sin(a) * 14 - 6, alpha: 0, scale: 0.4, duration: 380, ease: "Quad.out", onComplete: () => dot.destroy() });
+    }
+  }
+
+  // ---------- building ----------
+
+  private cellAt(x: number, y: number): { col: number; row: number } | null {
+    if (x < 0 || y < 0 || x >= WIDTH || y >= HEIGHT) return null;
+    return { col: Math.floor(x / CELL), row: Math.floor(y / CELL) };
+  }
+
+  private itemAt(col: number, row: number): Item | null {
+    for (const { item } of this.placed.values()) {
+      const f = footprint(item);
+      if (col >= f.col && col < f.col + f.w && row >= f.row && row < f.row + f.h) return item;
+    }
+    return null;
+  }
+
+  private pointerMoved(x: number, y: number): void {
+    if (store.snap?.phase !== "BUILD") return;
+    const sel = store.sel;
+    const cell = this.cellAt(x, y);
+    if (!cell) {
+      if (sel.hover || sel.hoverTarget) {
+        sel.hover = null;
+        sel.hoverTarget = null;
+        bus.selectionChanged();
+      }
+      return;
+    }
+    if (sel.choice === "bomb") {
+      const id = this.itemAt(cell.col, cell.row)?.id ?? null;
+      if (id !== sel.hoverTarget) {
+        sel.hoverTarget = id;
+        bus.selectionChanged();
+      }
+      return;
+    }
+    if (sel.choice) {
+      // the pointer holds the middle of a platform
+      const col = sel.choice === "platform" && !sel.rot ? cell.col - 1 : cell.col;
+      const row = sel.choice === "platform" && sel.rot ? cell.row - 1 : cell.row;
+      if (sel.hover?.col !== col || sel.hover?.row !== row || sel.hover?.rot !== sel.rot) {
+        sel.hover = { type: sel.choice, col, row, rot: sel.rot };
+        bus.selectionChanged();
+      }
+      return;
+    }
+    // nothing chosen: say who made what you point at
+    const item = this.itemAt(cell.col, cell.row);
+    this.game.canvas.style.cursor = item ? "help" : "default";
+    this.hoverInfo = item ? `${item.type[0].toUpperCase()}${item.type.slice(1)} placed by ${item.createdBy} in round ${item.createdRound}.` : "";
+  }
+  hoverInfo = "";
+
+  private pointerDown(x: number, y: number): void {
+    if (store.snap?.phase !== "BUILD" || !iCanBuild()) return;
+    this.pointerMoved(x, y);
+    const sel = store.sel;
+    if (sel.choice === "bomb") {
+      if (!sel.hoverTarget) return bus.say("Choose one of the placed pieces to demolish.", true);
+      sel.target = sel.hoverTarget;
+      bus.selectionChanged();
+      return;
+    }
+    if (!sel.choice || !sel.hover) return;
+    const error = placementError(store.snap.items, sel.hover);
+    if (error) return bus.say(`Can't place there: ${error}.`, true);
+    sel.pinned = { ...sel.hover };
+    bus.selectionChanged();
+  }
+
+  update(time: number, delta: number): void {
+    if (this.phase === "BUILD") this.drawGhosts();
+    if (this.local?.live && this.phase === "RUN") this.step(time, delta / 1000);
+    else if (this.local) this.local.view.setPosition(this.local.rect.x, this.local.rect.y + 14);
+    this.drawRemotes();
+  }
+
+  private drawGhosts(): void {
+    const g = this.ghost;
+    g.clear();
+    this.ghostPiece.clear();
+    const items = store.snap?.items ?? [];
+    // what other players are considering, in their colour
+    const seen = new Set<string>();
+    for (const pv of store.previews.values()) {
+      const colour = this.colourOf(pv.playerId);
+      const name = store.snap?.players.find((p) => p.id === pv.playerId)?.name ?? "";
+      let at: { x: number; y: number } | null = null;
+      if (pv.choice === "bomb" && pv.targetId) {
+        const target = items.find((i) => i.id === pv.targetId);
+        if (target) {
+          const r = cellToPixels(footprint(target));
+          g.lineStyle(2, colour, 0.8);
+          g.strokeRoundedRect(r.x - 3, r.y - 3, r.w + 6, r.h + 6, 6);
+          at = { x: r.x + r.w / 2, y: r.y - 10 };
+        }
+      } else if (pv.proposal) {
+        const f = footprint(pv.proposal);
+        g.fillStyle(colour, 0.12);
+        g.fillRoundedRect(f.col * CELL, f.row * CELL, f.w * CELL, f.h * CELL, 6);
+        g.lineStyle(1.5, colour, 0.6);
+        g.strokeRoundedRect(f.col * CELL, f.row * CELL, f.w * CELL, f.h * CELL, 6);
+        at = { x: (f.col + f.w / 2) * CELL, y: f.row * CELL - 10 };
+      }
+      if (!at) continue;
+      seen.add(pv.playerId);
+      let label = this.previewLabels.get(pv.playerId);
+      if (!label) {
+        label = this.add.text(0, 0, name, { fontFamily: "system-ui, sans-serif", fontSize: "11px", color: "#6a655d" }).setOrigin(0.5).setDepth(21);
+        this.previewLabels.set(pv.playerId, label);
+      }
+      label.setPosition(at.x, at.y);
+    }
+    for (const [id, label] of this.previewLabels) if (!seen.has(id)) {
+      label.destroy();
+      this.previewLabels.delete(id);
+    }
+
+    // my own choice
+    if (!iCanBuild()) return;
+    const sel = store.sel;
+    if (sel.choice === "bomb") {
+      for (const id of [sel.hoverTarget, sel.target]) {
+        const target = id ? items.find((i) => i.id === id) : null;
+        if (!target) continue;
+        const r = cellToPixels(footprint(target));
+        const pinned = id === sel.target;
+        g.fillStyle(C.red, pinned ? 0.16 : 0.08);
+        g.fillRoundedRect(r.x - 4, r.y - 4, r.w + 8, r.h + 8, 7);
+        g.lineStyle(pinned ? 2.5 : 1.5, C.red, pinned ? 0.95 : 0.6);
+        g.strokeRoundedRect(r.x - 4, r.y - 4, r.w + 8, r.h + 8, 7);
+      }
+      return;
+    }
+    const p: Proposal | null = sel.pinned ?? sel.hover;
+    if (!p) return;
+    const f = footprint(p);
+    const valid = placementError(items, p) === null;
+    const pinned = !!sel.pinned;
+    g.fillStyle(valid ? C.green : C.red, pinned ? 0.12 : 0.07);
+    g.fillRoundedRect(f.col * CELL, f.row * CELL, f.w * CELL, f.h * CELL, 6);
+    g.lineStyle(pinned ? 2.5 : 1.5, valid ? C.green : C.red, pinned ? 0.9 : 0.55);
+    g.strokeRoundedRect(f.col * CELL, f.row * CELL, f.w * CELL, f.h * CELL, 6);
+    // the piece itself, lifted a little until it is pinned
+    drawItem(this.ghostPiece, p.type, p.rot, f.col * CELL, (f.row + f.h) * CELL - (pinned ? 0 : 3));
+    this.ghostPiece.setAlpha(valid ? (pinned ? 0.95 : 0.6) : 0.35);
+  }
+
+  private drawRemotes(): void {
+    const t = performance.now() - INTERP_DELAY_MS;
+    for (const r of this.remotes.values()) {
+      if (r.gone || r.samples.length === 0) continue;
+      const s = r.samples;
+      let a = s[0], b = s[0];
+      for (let i = s.length - 1; i >= 0; i--) {
+        if (s[i].t <= t) {
+          a = s[i];
+          b = s[Math.min(i + 1, s.length - 1)];
+          break;
+        }
+      }
+      const k = b.t === a.t ? 1 : Math.min(1, Math.max(0, (t - a.t) / (b.t - a.t)));
+      r.view.setPosition(a.x + (b.x - a.x) * k, a.y + (b.y - a.y) * k);
+      if (b.facing !== r.facing) {
+        r.facing = b.facing;
+        r.figure.clear();
+        drawFigure(r.figure, r.colour, r.facing);
+      }
+    }
+  }
+
+  // ---------- my own movement ----------
+
+  private step(now: number, dt: number): void {
+    const l = this.local!;
+    const b = l.rect.body as Phaser.Physics.Arcade.Body;
+    const k = this.keys;
+    const dir = (k.right.isDown || k.d.isDown ? 1 : 0) - (k.left.isDown || k.a.isDown ? 1 : 0);
+    const jump = Phaser.Input.Keyboard.JustDown(k.up) || Phaser.Input.Keyboard.JustDown(k.w) || Phaser.Input.Keyboard.JustDown(k.space);
+    const onGround = b.blocked.down;
+
+    // run: ease towards the target speed
+    const target = dir * MOVEMENT.moveSpeed;
+    const accel = (onGround ? MOVEMENT.groundAcceleration : MOVEMENT.airAcceleration) * dt;
+    const vx = b.velocity.x;
+    b.setVelocityX(Math.abs(target - vx) <= accel ? target : vx + Math.sign(target - vx) * accel);
+
+    // walls: remember the last touch so a jump just after leaving still counts
+    const wallSide: Side | 0 = !onGround && b.blocked.left ? -1 : !onGround && b.blocked.right ? 1 : 0;
+    if (wallSide) {
+      l.lastWallTouchAt = now;
+      l.lastWallSide = wallSide;
+      if (dir === wallSide && b.velocity.y > MOVEMENT.wallSlideSpeed) b.setVelocityY(MOVEMENT.wallSlideSpeed);
+    }
+
+    if (jump) {
+      if (onGround) b.setVelocityY(-MOVEMENT.jumpVelocity);
+      else if (canWallJump(now, wallSide !== 0, l.lastWallTouchAt)) {
+        const v = wallJumpVelocity(l.lastWallSide, dir === l.lastWallSide);
+        b.setVelocity(v.vx, v.vy);
+        l.lastWallTouchAt = null;
+      }
+    }
+
+    // a little squash on landing
+    if (onGround && !l.wasOnGround && !reducedMotion.matches) {
+      l.view.setScale(1.12, 0.86);
+      this.tweens.add({ targets: l.view, scaleX: 1, scaleY: 1, duration: 140, ease: "Quad.out" });
+    }
+    l.wasOnGround = onGround;
+
+    const facing: -1 | 1 = dir === 0 ? l.facing : dir > 0 ? 1 : -1;
+    if (facing !== l.facing) {
+      l.facing = facing;
+      l.figure.clear();
+      drawFigure(l.figure, l.colour, facing);
+    }
+    l.view.setPosition(l.rect.x, l.rect.y + 14);
+
+    if (l.rect.y > DEATH_Y) return this.die();
+
+    if (now - l.lastPoseAt >= POSE_EVERY_MS) {
+      l.lastPoseAt = now;
+      bus.pose({ x: Math.round(l.rect.x), y: Math.round(l.rect.y + 14), vx: Math.round(b.velocity.x), vy: Math.round(b.velocity.y), facing });
+    }
+  }
+
+  // called when a run begins so the countdown figure becomes playable
+  release(): void {
+    if (!this.local) return;
+    this.local.live = this.amRunning();
+    (this.local.rect.body as Phaser.Physics.Arcade.Body).setAllowGravity(true);
+  }
+}

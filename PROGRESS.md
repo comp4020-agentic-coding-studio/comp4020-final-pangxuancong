@@ -32,10 +32,29 @@ Design rules, detailed in `docs/`:
 
 ## Current state
 
-The code is still the crit 8 machine (Ball → Ramp → Cup, SVG, deterministic
-server run plan, SQLite). It is the migration source, not the target
-(`docs/MIGRATION.md`). Harness rewritten for the platformer; no platformer
-code exists yet.
+First playable build-and-run platformer, local only. Not deployed and not
+pushed: the live site and the pushed repo are still the crit 8 machine
+(tag `crit-8`).
+
+- One shared level: a fixed course (START ledge, two islands, a tower that
+  needs a wall climb, GOAL ledge) on a 32×18 grid, all visible at once.
+- BUILD: each player places a Platform (R turns it into a post), Spring or
+  Spike, uses the Bomb on any placed piece, or skips. Click a piece, click the
+  level to pin it (green valid, red with the reason), Enter or Place to
+  commit. Others see your preview in your colour while you decide. AFK:
+  auto-skip after 40 s idle, nobody waits past 120 s.
+- COUNTDOWN 3 s, then RUN: everyone at once, arrows/WASD and jump; wall slide,
+  250 ms wall-jump grace, pressing into a wall climbs it. Spikes and falling
+  kill; the flag finishes. No player collision; others are interpolated.
+  A runner who does not move for 30 s drops out.
+- RESULTS for 3.5 s, then the next BUILD shows where people died. After round
+  6 the level is finished (kept in SQLite) and a fresh one starts.
+- Persistent: level, round, items (demolished items kept as history).
+  Ephemeral: players, positions, statuses, previews, traces.
+
+Not built yet: Fan, Moving Platform, sound, most motion polish, activity
+logging. The Dockerfile's new two-stage build has not been run (no Docker
+here); CI will run it when the repo is public.
 
 ## Still to do (human)
 
@@ -48,21 +67,18 @@ code exists yet.
 
 ## Next milestones
 
-1. Platformer vertical slice (F01–F04): Phaser scene, START, GOAL, run, jump,
-   wall slide and wall-jump grace, death bounds, finish trigger. Single
-   player, no placement.
-2. Local round loop (F05–F09): BUILD → RUN → BUILD with Platform, Spring,
-   Spike, one build action, placed items persisted.
-3. Multiplayer (F10–F13): Socket.IO snapshot, realtime committed placement,
-   remote players, statuses, server phase, simultaneous BUILD.
-4. Recovery (F14): Demolition Bomb, protected START/GOAL.
-5. Later: Fan, Moving Platform, death traces, animation, sound, responsive
-   layout, reconnect robustness, activity logging.
+1. ~~Platformer slice, round loop, multiplayer, Bomb (F01–F14, F17)~~ first
+   playable version, 2026-10-06.
+2. Human playtest of the first version; tune movement and the base course.
+3. Fan, Moving Platform (F15, F16).
+4. Motion and sound (F18), responsive layout, reconnect robustness.
+5. Server-side activity logging (F19).
+6. Before deploying: run the Docker build (CI or locally).
 
 ## Known constraints
 
 - `fly.toml`, the `/data` volume and `spec/invariants.test.ts` are fixed;
-- Vite adds a build step the current Dockerfile does not have;
+- the Dockerfile builds the client with Vite in a first stage (unverified);
 - Phaser Arcade Physics only;
 - keep README / CLAUDE / spec aligned.
 
@@ -89,3 +105,17 @@ arrow keys).
 2026-10-06, Fly: deployed; `/`, `/readme/` answer and `spec/invariants.test.ts`
 passes against the live URL; a ramp angle set on the live site survived a
 machine restart (the /data volume).
+
+2026-10-06, local: first playable platformer. `pnpm typecheck` and
+`pnpm check` (19 tests: invariants, rounds, level, realtime) green against a
+restarted `pnpm dev`; the same 19 green against `pnpm build` + production mode
+on a throwaway DATA_DIR. Browser (Playwright, Chromium 1360×900): one player
+ran the base course to the flag with a scripted route (three jumps, a
+six-jump wall climb); two players: A's preview shown to B, A's platform
+reached B in 214 ms, B demolished it, countdown, both fell, results, next
+BUILD with two death traces; spring launches ~250 px; spike kills and leaves a
+trace; standing on a placed plank; sliding at 110 px/s and climb-jumping on a
+placed post; A sees B interpolated ~38 px behind while moving; six rounds
+rolled over to a fresh level; level, round and items survived a server
+restart; no console errors. Not checked: Docker build, Fly deploy, touch
+input, screen readers, real people.

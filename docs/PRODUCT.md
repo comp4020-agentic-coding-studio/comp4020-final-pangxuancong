@@ -55,14 +55,14 @@ consequences beat a large inventory of weak ones.
 
 | Claim | Product rule | Automated? | Human judgement? |
 |---|---|---:|---:|
-| Everyone changes the level | one build action per player per round | planned (S3) | yes |
-| The level outlives players | placed items persist | planned (S1) | no |
-| Changes are shared | committed placement reaches other clients within ~1 s | planned (S2) | yes |
-| Rounds always progress | BUILD/RUN end on player states, not timers; disconnects never block | planned (S3, S4) | no |
-| Deadlock is recoverable | Bomb removes destructible items, never protected ones | planned (S5) | yes |
-| Only technical validity is enforced | START/GOAL protected; no path checks | planned (S6) | no |
+| Everyone changes the level | one build action per player per round | yes (S3) | yes |
+| The level outlives players | placed items persist | yes (S1) | no |
+| Changes are shared | committed placement reaches other clients within ~1 s | yes (S2) | yes |
+| Rounds always progress | BUILD/RUN end on player states, not timers; disconnects never block | yes (S3, S4) | no |
+| Deadlock is recoverable | Bomb removes destructible items, never protected ones | yes (S5) | yes |
+| Only technical validity is enforced | START/GOAL protected; no path checks | yes (S6) | no |
 | Items are neither good nor bad | same object can help or hurt | no | yes |
-| Challenge is the level | forgiving wall movement | no (unit test optional) | yes |
+| Challenge is the level | forgiving wall movement | rule only (unit test) | yes |
 | No winners | no score, ranking or points for FINISHED | no | yes |
 
 ## Priority order

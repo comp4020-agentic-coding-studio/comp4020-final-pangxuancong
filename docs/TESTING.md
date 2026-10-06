@@ -9,21 +9,29 @@ Restart `pnpm dev` before checking a change. `node --watch` can lose track of
 a file that was replaced rather than written in place (`sed -i`, some editors)
 and keep serving old code without saying so.
 
+Stopping a background `pnpm dev` means stopping the watcher, not just the
+server: killing the process that holds port 8080 leaves `node --watch`
+alive, and it starts another server on the next file change. Start it in its
+own process group (`setsid pnpm dev &`) and kill the group. `pnpm dev`
+watches only `src/server` and `src/shared`; Vite reloads the client itself.
+
 ## Checks
 
 | Id | Check | Protects | Status |
 |---|---|---|---|
 | S0 | `/` answers; `/readme/` has every README heading | course invariants | `spec/invariants.test.ts` (shipped, keep) |
-| S1 | a committed Platform is in the level state, and still there after reload/reconnect | the level outlives sessions (P7) | planned |
-| S2 | client A commits an item; client B receives it without reload, within ~1 s. Committed state only, not drag previews | changes are shared (P8) | planned |
-| S3 | two active players: A places, B skips → BUILD ends. A WAITING player holds BUILD; a DISCONNECTED one does not | everyone changes the level; rounds progress (P1) | planned |
-| S4 | A FINISHED + B DEAD → next BUILD; A FINISHED + B RUNNING → still RUN | rounds progress without timers | planned |
-| S5 | Bomb on a placed item: removed, removal persists, action consumed. Bomb on START, GOAL, base geometry: rejected | deadlock is recoverable (P4) | planned |
-| S6 | placement inside START or over GOAL rejected; a legal one accepted. Never test completability | only technical validity (P3) | planned |
-| — | ramp setting and attempt persist; out-of-bounds angles refused | crit 8 machine | `spec/machine.test.ts` (deprecated; remove with the machine code, `docs/MIGRATION.md`) |
+| S1 | a committed Platform is in the level state (`/api/level`), not just a socket message | the level outlives sessions (P7) | `spec/realtime.test.ts` |
+| S2 | client A commits an item; client B receives it without reload, within ~1 s. Committed state only, not drag previews | changes are shared (P8) | `spec/realtime.test.ts` |
+| S3 | two active players: A places, B skips → BUILD ends. A WAITING player holds BUILD; a DISCONNECTED one does not | everyone changes the level; rounds progress (P1) | `spec/rounds.test.ts` (+ one build action, AFK timeouts, empty roster, late joiners) |
+| S4 | A FINISHED + B DEAD → next BUILD; A FINISHED + B RUNNING → still RUN | rounds progress without timers | `spec/rounds.test.ts` (+ run idle limit, six rounds then a fresh level) |
+| S5 | Bomb on a placed item: removed, removal persists, action consumed. Bomb on START, GOAL, base geometry: rejected | deadlock is recoverable (P4) | rules: `spec/level.test.ts`; server: `spec/realtime.test.ts` |
+| S6 | placement inside START or over GOAL rejected; a legal one accepted. Never test completability | only technical validity (P3) | `spec/level.test.ts` |
+| — | wall jump allowed while touching and within the grace window; kicks away, mostly up when pressing in | forgiving movement (P6) | `spec/level.test.ts` |
 
-S3 and S4 are cheapest as unit tests of a pure round-state function, plus one
-two-client check once Socket.IO exists.
+S3 and S4 test the pure round state machine with explicit times.
+`spec/realtime.test.ts` connects two real clients and needs the server to
+reach a BUILD within 30 s: run it with nobody else mid-round. Persistence
+across a server restart was checked by hand (2026-10-06).
 
 Persistence across a real Fly redeploy is a manual check: place, deploy,
 reload the live site. The spec mutates state, so run it against a local or CI
