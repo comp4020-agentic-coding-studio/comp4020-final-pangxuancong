@@ -201,6 +201,8 @@ button.danger { background: var(--red); border-color: var(--red); }
 .vote button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
 .tally { font-size: 0.85rem; }
 
+.head { display: inline-grid; width: 1.5rem; height: 1.5rem; flex: none; }
+.head svg { width: 100%; height: 100%; }
 .dot { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 50%; flex: none; }
 
 /* the round panel */
@@ -294,7 +296,58 @@ kbd {
   background: #fffdf8;
 }
 
+/* choosing a level */
+.card.select { min-width: min(46rem, 94%); }
+.levels { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.7rem; margin-top: 0.6rem; }
+.level {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.45rem;
+  border: 1.5px solid rgba(43, 42, 40, 0.14);
+  border-radius: 10px;
+  background: #fffdf8;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  text-align: left;
+  transition: transform 140ms, border-color 140ms, box-shadow 140ms;
+}
+.level svg { width: 100%; height: auto; border-radius: 6px; box-shadow: inset 0 0 0 1px rgba(43, 42, 40, 0.08); }
+.level:hover { transform: translateY(-2px); box-shadow: 0 6px 14px -10px rgba(43, 42, 40, 0.6); }
+.level[aria-pressed="true"] { border-color: var(--wood-dark); background: #f6e9d6; }
+.level .lname { font-family: var(--serif); font-size: 1rem; color: var(--ink); }
+.level .blurb { font-size: 0.78rem; color: var(--ink-soft); line-height: 1.3; }
+.level .pickers { display: flex; gap: 0.15rem; min-height: 1.5rem; }
+
+/* the final table: rows arrive from last place to first */
+.card.final { min-width: min(30rem, 92%); }
+.board { list-style: none; margin: 0.7rem 0 0.3rem; padding: 0; display: grid; gap: 0.35rem; text-align: left; }
+.board .row {
+  display: grid;
+  grid-template-columns: 1.4rem 1.6rem minmax(6rem, 1fr) 5.5rem 2.6rem;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.3rem 0.5rem;
+  border-radius: 9px;
+  background: rgba(235, 226, 210, 0.5);
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 320ms ease-out, transform 320ms ease-out, background 400ms, box-shadow 400ms;
+}
+.board .row.shown { opacity: 1; transform: none; }
+.board .rank { font: 700 0.8rem var(--sans); color: var(--ink-soft); text-align: center; }
+.board .who { display: grid; font-weight: 600; font-size: 0.92rem; }
+.board .who small { font-weight: 400; font-size: 0.74rem; color: var(--ink-soft); }
+.board .bar { height: 0.55rem; border-radius: 99px; background: rgba(43, 42, 40, 0.08); overflow: hidden; }
+.board .bar span { display: block; height: 100%; width: 0; border-radius: 99px; transition: width 800ms cubic-bezier(0.2, 0.7, 0.2, 1); }
+.board .pts { font: 700 1.05rem var(--serif); text-align: right; font-variant-numeric: tabular-nums; }
+.board .row.winner { background: #fbefd2; box-shadow: 0 0 0 1.5px #e0bf77; }
+.board .row.winner .rank::before { content: "★ "; color: var(--brass); }
+.card.final .vote, .card.final .tally { opacity: 0; transition: opacity 400ms; pointer-events: none; }
+.card.final.ready .vote, .card.final.ready .tally { opacity: 1; pointer-events: auto; }
+
 @media (max-width: 1100px) {
+  .levels { grid-template-columns: 1fr; }
   .table { grid-template-columns: 1fr; }
   .stage { order: -1; }
   .tray { grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); }
@@ -303,5 +356,5 @@ kbd {
 }
 @media (prefers-reduced-motion: reduce) {
   .count { animation: none; }
-  .piece, .steps li { transition: none; }
+  .piece, .steps li, .board .row, .board .bar span { transition: none; }
 }

@@ -15,13 +15,16 @@ export interface PlayerView {
   points: number; // this game
   gained: number; // this round, shown in RESULTS
   vote: Vote | null;
+  pick: number | null; // SELECT: the level they chose
+  character: number | null; // index into CHARACTERS, while seated
 }
 
 // everyone who scored this game, including people who have since left
-export interface ScoreRow { playerId: string; name: string; colour: string; points: number; finishes: number; kills: number }
+export interface ScoreRow { playerId: string; name: string; colour: string; character: number | null; points: number; finishes: number; kills: number }
 
 export interface Snapshot {
-  levelId: number;
+  levelId: number; // 0 while choosing the first level
+  layout: number; // which course (src/shared/levels.ts)
   round: number;
   maxRounds: number;
   phase: Phase;
@@ -67,6 +70,7 @@ export interface ClientToServer {
   // `by`: the spike that killed this player, if one did
   "run:result": (p: { result: "DEAD" | "FINISHED"; x: number; y: number; by?: string }) => void;
   "level:vote": (v: Vote) => void;
+  "level:pick": (level: number) => void;
 }
 
 export interface ServerToClient {

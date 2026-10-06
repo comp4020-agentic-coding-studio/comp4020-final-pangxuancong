@@ -7,12 +7,14 @@ export const MAX_ROUNDS = 6;
 export const MAX_PLAYERS = 4;
 export const COUNTDOWN_MS = 3000;
 export const RESULTS_MS = 3500;
-export const VOTE_MS = 30_000; // LEVEL_END: archive or restart
+export const VOTE_MS = 40_000; // LEVEL_END: the score reveal, then archive or restart
+export const SELECT_MS = 20_000; // after the first pick, the rest have this long
+export const LEVEL_IDS = [1, 2, 3] as const;
 export const BUILD_IDLE_MS = 40_000; // no build activity: auto-skip
 export const BUILD_MAX_MS = 120_000; // nobody is left waiting after this
 export const RUN_IDLE_MS = 30_000; // a character that has not moved: out
 
-export type Phase = "BUILD" | "COUNTDOWN" | "RUN" | "RESULTS" | "LEVEL_END";
+export type Phase = "SELECT" | "BUILD" | "COUNTDOWN" | "RUN" | "RESULTS" | "LEVEL_END";
 export type Vote = "ARCHIVE" | "RESTART";
 export type BuildState = "WAITING" | "PLACED" | "SKIPPED" | "DISCONNECTED";
 export type RunState = "RUNNING" | "DEAD" | "FINISHED" | "DISCONNECTED";
@@ -27,12 +29,14 @@ export interface Player {
   lastActivityAt: number; // build activity, or character movement during RUN
   joinedAt: number; // seats go in order of arrival
   vote: Vote | null; // LEVEL_END only
+  pick: number | null; // SELECT only: which level
+  character: number | null; // index into CHARACTERS while seated
 }
 
 export interface RoundState {
   phase: Phase;
   phaseStartedAt: number;
-  phaseEndsAt: number | null; // COUNTDOWN, RESULTS and LEVEL_END
+  phaseEndsAt: number | null; // COUNTDOWN, RESULTS, LEVEL_END, and SELECT once someone picks
   round: number; // 1..MAX_ROUNDS
   players: Player[];
 }
@@ -42,11 +46,14 @@ export type Transition =
   | { to: "RUN" }
   | { to: "RESULTS"; levelDone: boolean }
   | { to: "LEVEL_END" }
+  | { to: "SELECT" }
   | { to: "BUILD"; newLevel: false }
-  | { to: "BUILD"; newLevel: true; archive: boolean };
+  | { to: "BUILD"; newLevel: true; archive: true }
+  | { to: "BUILD"; newLevel: true; archive: false; layout: number };
 
-export const newRoundState = (round: number, now: number): RoundState => ({
-  phase: "BUILD",
+// A game in progress resumes in BUILD; with none, everyone starts by choosing a level.
+export const newRoundState = (round: number, now: number, phase: "BUILD" | "SELECT" = "BUILD"): RoundState => ({
+  phase,
   phaseStartedAt: now,
   phaseEndsAt: null,
   round,
@@ -62,7 +69,7 @@ export function join(s: RoundState, id: string, name: string, now: number): Play
   if (s.phase === "BUILD" && !s.players.some((q) => q.active && q.connected)) s.phaseStartedAt = now;
   let p = find(s, id);
   if (!p) {
-    p = { id, name, connected: false, active: false, build: "WAITING", run: null, lastActivityAt: now, joinedAt: now, vote: null };
+    p = { id, name, connected: false, active: false, build: "WAITING", run: null, lastActivityAt: now, joinedAt: now, vote: null, pick: null, character: null };
     s.players.push(p);
   }
   // the roster is open during BUILD while a seat is free; a returning player
@@ -76,9 +83,36 @@ export function join(s: RoundState, id: string, name: string, now: number): Play
       p.build = "WAITING";
       p.lastActivityAt = now;
     }
+    if (p.character === null) p.character = freeCharacter(s);
   }
   return p;
 }
+
+// the lowest character nobody seated is using
+function freeCharacter(s: RoundState): number {
+  const used = new Set(s.players.filter((p) => p.active && p.connected).map((p) => p.character));
+  for (let c = 0; c < MAX_PLAYERS; c++) if (!used.has(c)) return c;
+  return 0;
+}
+
+export function pick(s: RoundState, id: string, level: number, now: number): boolean {
+  const p = find(s, id);
+  if (s.phase !== "SELECT" || !p?.connected || !(LEVEL_IDS as readonly number[]).includes(level)) return false;
+  p.pick = level;
+  // the first pick starts the clock for everyone else
+  if (s.phaseEndsAt === null) s.phaseEndsAt = now + SELECT_MS;
+  return true;
+}
+
+// Most picks wins; a tie goes to the lower level, nobody picking to level 1.
+export const pickResult = (s: RoundState): number => {
+  let best: number = LEVEL_IDS[0], most = 0;
+  for (const id of LEVEL_IDS) {
+    const count = s.players.filter((p) => p.pick === id).length;
+    if (count > most) [best, most] = [id, count];
+  }
+  return best;
+};
 
 export function leave(s: RoundState, id: string): void {
   const p = find(s, id);
@@ -90,6 +124,8 @@ export function leave(s: RoundState, id: string): void {
   }
   if (p.build === "WAITING") p.build = "DISCONNECTED";
   if (p.run === "RUNNING") p.run = "DISCONNECTED";
+  p.pick = null;
+  p.vote = null;
 }
 
 // An active player with their build action still unused.
@@ -147,6 +183,15 @@ export const runComplete = (s: RoundState): boolean => activePlayers(s).every((p
 // (persisting the round, starting a new level, broadcasting).
 export function tick(s: RoundState, now: number): Transition | null {
   switch (s.phase) {
+    case "SELECT": {
+      const here = s.players.filter((p) => p.connected);
+      const allIn = here.length > 0 && here.every((p) => p.pick !== null);
+      if (!allIn && (s.phaseEndsAt === null || now < s.phaseEndsAt)) return null;
+      const layout = pickResult(s);
+      s.round = 1;
+      startBuild(s, now);
+      return { to: "BUILD", newLevel: true, archive: false, layout };
+    }
     case "BUILD": {
       const active = activePlayers(s);
       for (const p of active) {
@@ -200,10 +245,13 @@ export function tick(s: RoundState, now: number): Transition | null {
       const voters = s.players.filter((p) => p.connected);
       const allIn = voters.length > 0 && voters.every((p) => p.vote !== null);
       if (!allIn && now < s.phaseEndsAt!) return null;
-      const archive = voteResult(s) === "ARCHIVE";
       s.round = 1;
-      startBuild(s, now);
-      return { to: "BUILD", newLevel: true, archive };
+      if (voteResult(s) === "ARCHIVE") {
+        startBuild(s, now);
+        return { to: "BUILD", newLevel: true, archive: true };
+      }
+      startSelect(s, now);
+      return { to: "SELECT" };
     }
   }
 }
@@ -220,6 +268,22 @@ function startBuild(s: RoundState, now: number): void {
     p.build = "WAITING";
     p.run = null;
     p.vote = null;
+    p.pick = null;
     p.lastActivityAt = now;
+    if (!p.active) p.character = null;
   });
+  // seated players keep their character; newcomers get a free one
+  for (const p of s.players) if (p.active && p.character === null) p.character = freeCharacter(s);
+}
+
+function startSelect(s: RoundState, now: number): void {
+  s.phase = "SELECT";
+  s.phaseStartedAt = now;
+  s.phaseEndsAt = null;
+  s.players = s.players.filter((p) => p.connected);
+  for (const p of s.players) {
+    p.active = false;
+    p.pick = null;
+    p.vote = null;
+  }
 }

@@ -40,16 +40,21 @@ the live site and the pushed repo are still the crit 8 machine (tag `crit-8`).
   (right), a four-step strip below with the current step lit. Crates with
   metal brackets, a steel tower, a red flag, jointed figures that stand, run,
   jump, fall and wall-slide.
+- Three courses (The Gaps, The Tower, The Swing), chosen by vote before
+  each game; The Tower and The Swing carry their own fan and swing.
+- Four characters by seat: Chicken, Big Dog, Pot Horse, Dabai. Dust and
+  spark particles for running, jumping, landing, wall kicks and springs.
 - Up to four players; more watch and take free seats at the next BUILD.
 - BUILD: Platform (R: post), Spring, Spike, Fan (R: four directions, 4-cell
-  wind), Moving Platform (R: sideways or up-down track, 3 s cycle), the Bomb
+  wind), Moving Platform (R: sideways or up-down track, 6 s cycle), the Bomb
   on any piece, or skip. AFK: auto-skip after 40 s idle, 120 s at most.
 - RUN: wall slide, 250 ms wall-jump grace, climb by jumping into a wall;
   spikes and falls kill; the flag finishes. Idle 30 s drops out.
 - Scores: +1 for the flag, +0.2 to a spike's placer for each other player it
   kills. RESULTS shows the round's gains.
 - After six rounds: final scores and a vote. Archive (majority, tie or
-  timeout) starts the next game on a copy of the level; restart starts bare.
+  timeout) starts the next game on a copy of the level; restart returns to
+  level choice. The final table reveals from last place up.
   Scores reset per game.
 - Persistent: levels (games), items (demolished kept as history), score
   events. Ephemeral: players, positions, statuses, previews, traces, votes.
@@ -72,11 +77,13 @@ Dockerfile has not been run (no Docker here).
    playable version, 2026-10-06.
 2. ~~Fan, Moving Platform, scores, archive/restart, four seats, new layout
    (F15, F16, F20–F23)~~ 2026-10-06.
-3. Human playtest; tune movement, fan strength, the base course and whether
+3. ~~Three courses with level choice, four characters, particles, final
+   score reveal, slower Moving Platform (F24–F27)~~ 2026-10-06.
+4. Human playtest; tune movement, fan strength, the base course and whether
    +0.2 per kill crowds out helping.
-4. Motion and sound (F18), reconnect robustness.
-5. Server-side activity logging (F19).
-6. Before deploying: run the Docker build (CI or locally).
+5. Motion and sound (F18), reconnect robustness.
+6. Server-side activity logging (F19).
+7. Before deploying: run the Docker build (CI or locally).
 
 ## Known constraints
 
@@ -138,3 +145,15 @@ at zero; the base course still finishes with the scripted route; no console
 errors. Found and fixed: overlay cards were rebuilt every 200 ms (compared
 against browser-rewritten innerHTML), which detached the vote buttons.
 Not checked: Docker build, deploy, touch, screen readers, real people.
+
+2026-10-06, local: three courses, level choice, characters, particles, final
+reveal, Moving Platform 6 s. `pnpm typecheck` and `pnpm check` (36 tests)
+green against a separate server (port 8092, throwaway DATA_DIR). Browser
+(Playwright, 1440×900): four players all picked level 2 and BUILD opened on
+The Tower as Chicken, Big Dog, Pot Horse, Dabai; three players played six
+rounds on The Swing: a player spike's kill credited +0.2, a course spike
+credited nobody, the final table revealed bottom-up with the winner lit,
+and a 2–1 vote for a new level returned to SELECT with no items; no console
+errors. Screenshots looked right (layout, swing rope, reveal). Not checked:
+whether each new course is fun or fair to finish by hand (the solver is
+coarse), particle feel at speed, Docker build, deploy, touch, real people.

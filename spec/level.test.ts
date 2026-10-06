@@ -1,9 +1,15 @@
 import { expect, it } from "vitest";
-import { BASE_BLOCKS, CELL, GOAL_ZONE, type Item, MOVING_PERIOD_MS, MOVING_TRAVEL, START_ZONE, demolitionError, fanZone, movingOffset, placementError } from "../src/shared/level.ts";
+import { CELL, type Item, MOVING_PERIOD_MS, MOVING_TRAVEL, demolitionError, fanZone, movingOffset, placementError as check } from "../src/shared/level.ts";
+import { LEVELS } from "../src/shared/levels.ts";
 import { MOVEMENT, canWallJump, wallJumpVelocity } from "../src/shared/movement.ts";
 
 // Placement is checked for technical validity only (docs/ITEMS.md): never for
 // whether the level can still be finished.
+
+// placement on level 1, the course these cases were written against
+const level1 = LEVELS[0];
+const placementError = (items: Item[], p: unknown): string | null => check(level1, items, p);
+const { start: START_ZONE, goal: GOAL_ZONE, blocks: BASE_BLOCKS } = level1;
 
 const item = (over: Partial<Item>): Item => ({ id: "x", type: "platform", col: 8, row: 6, rot: 0, createdBy: "A", createdById: "a", createdRound: 1, ...over });
 
@@ -29,12 +35,18 @@ it("S6: accepts a legal piece, including one that makes the level harder", () =>
   expect(placementError([], { type: "platform", col: 20, row: 6, rot: 1 })).toBeNull();
 });
 
+it("refuses to build over a level's own fixtures", () => {
+  const level2 = LEVELS[1];
+  const spike = level2.fixtures.find((f) => f.type === "spike")!;
+  expect(check(level2, [], { type: "platform", col: spike.col, row: spike.row, rot: 0 })).toMatch(/part of the level/);
+});
+
 it("S5: the Bomb can name any placed piece, and nothing else", () => {
   const items = [item({ id: "mine", createdBy: "A" }), item({ id: "theirs", col: 12, createdBy: "B" })];
   expect(demolitionError(items, "theirs")).toBeNull();
   expect(demolitionError(items, "mine")).toBeNull();
   // START, GOAL, base geometry and bounds have no item id to name
-  for (const target of ["start", "goal", "base-0", "", null, 3]) expect(demolitionError(items, target)).not.toBeNull();
+  for (const target of ["start", "goal", "base-0", "", null, 3, LEVELS[1].fixtures[0].id]) expect(demolitionError(items, target)).not.toBeNull();
 });
 
 it("allows a wall jump while touching, and briefly after leaving", () => {

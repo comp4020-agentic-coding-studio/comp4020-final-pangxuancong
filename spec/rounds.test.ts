@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import {
   BUILD_IDLE_MS, BUILD_MAX_MS, COUNTDOWN_MS, MAX_PLAYERS, MAX_ROUNDS, RESULTS_MS, RUN_IDLE_MS, type RoundState, VOTE_MS,
-  act, join, leave, moved, newRoundState, report, tick, touchBuild, vote,
+  SELECT_MS, act, join, leave, moved, newRoundState, pick, report, tick, touchBuild, vote,
 } from "../src/shared/rounds.ts";
 import { type ScoreEvent, killCredit, tally } from "../src/shared/score.ts";
 
@@ -142,13 +142,13 @@ const toLevelEnd = (s: RoundState, ids: string[]): number => {
   return t;
 };
 
-it("S8: after six rounds, the vote decides: majority restarts, a tie keeps the level", () => {
+it("S8: after six rounds, the vote decides: majority restarts (back to choosing a level), a tie keeps the level", () => {
   const s = twoBuilding();
   let t = toLevelEnd(s, ["a", "b"]);
   vote(s, "a", "RESTART");
   expect(tick(s, ++t)).toBeNull(); // B has not voted yet
   vote(s, "b", "RESTART");
-  expect(tick(s, ++t)).toEqual({ to: "BUILD", newLevel: true, archive: false });
+  expect(tick(s, ++t)).toEqual({ to: "SELECT" });
   expect(s.round).toBe(1);
 
   const tie = twoBuilding();
@@ -180,6 +180,42 @@ it("S9: seats four players; a fifth watches and takes a seat that frees up", () 
   tick(s, t + RESULTS_MS);
   expect(s.phase).toBe("BUILD");
   expect(s.players.filter((p) => p.active).map((p) => p.id)).toEqual(["a", "c", "d", "e"]);
+});
+
+it("starts a fresh game by choosing a level: everyone picks, or the clock runs out after the first pick", () => {
+  const s = newRoundState(1, 0, "SELECT");
+  join(s, "a", "A", 0);
+  join(s, "b", "B", 0);
+  expect(s.players.every((p) => !p.active)).toBe(true); // nobody is seated while choosing
+  expect(tick(s, 600_000)).toBeNull(); // no clock before anyone picks
+  expect(pick(s, "a", 3, 600_000)).toBe(true);
+  expect(pick(s, "a", 7, 600_000)).toBe(false); // no such level
+  expect(tick(s, 600_000 + SELECT_MS - 1)).toBeNull();
+  expect(tick(s, 600_000 + SELECT_MS)).toEqual({ to: "BUILD", newLevel: true, archive: false, layout: 3 });
+  expect(s.players.every((p) => p.active && p.build === "WAITING")).toBe(true);
+
+  const tie = newRoundState(1, 0, "SELECT");
+  join(tie, "a", "A", 0);
+  join(tie, "b", "B", 0);
+  pick(tie, "a", 3, 1);
+  pick(tie, "b", 2, 2);
+  expect(tick(tie, 3)).toEqual({ to: "BUILD", newLevel: true, archive: false, layout: 2 }); // all in; a tie goes to the lower level
+});
+
+it("gives each seat its own character and keeps it into the next game", () => {
+  const s = newRoundState(1, 0);
+  for (const id of ["a", "b", "c", "d", "e"]) join(s, id, id, 0);
+  const chars = s.players.filter((p) => p.active).map((p) => p.character);
+  expect(chars).toEqual([0, 1, 2, 3]);
+  expect(s.players.find((p) => p.id === "e")?.character).toBeNull();
+  leave(s, "a");
+  for (const id of ["b", "c", "d"]) act(s, id, "SKIPPED");
+  let t = toRun(s, 0);
+  for (const id of ["b", "c", "d"]) report(s, id, "DEAD");
+  tick(s, ++t);
+  tick(s, t + RESULTS_MS);
+  // e takes a's seat and the character a left free; the others keep theirs
+  expect(Object.fromEntries(s.players.map((p) => [p.id, p.character]))).toEqual({ b: 1, c: 2, d: 3, e: 0 });
 });
 
 it("S7: +1 for the flag, +0.2 to the placer per other player spiked, nothing for your own spike", () => {

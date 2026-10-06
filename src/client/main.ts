@@ -162,7 +162,7 @@ function skip(): void {
 }
 
 buildTray(choose);
-onVote((v) => socket.emit("level:vote", v));
+onVote((v) => socket.emit("level:vote", v), (n) => socket.emit("level:pick", n));
 buttons.rotate.addEventListener("click", rotate);
 buttons.cancel.addEventListener("click", cancel);
 buttons.skip.addEventListener("click", skip);

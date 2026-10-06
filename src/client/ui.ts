@@ -1,7 +1,9 @@
 // The HTML around the level: the Parts Tray, the round panel (phase, players,
 // status and score, one line of guidance), the four-step strip, and the cards
 // that sit over the level between runs (docs/ART_DIRECTION.md).
-import type { BuildChoice } from "../shared/level.ts";
+import { CHARACTERS } from "../shared/characters.ts";
+import { CELL, type BuildChoice, footprint } from "../shared/level.ts";
+import { LEVELS, type LevelDef, levelById } from "../shared/levels.ts";
 import type { PlayerView, Snapshot } from "../shared/protocol.ts";
 import type { Vote } from "../shared/rounds.ts";
 import { iCanBuild, myPlayer, store } from "./state.ts";
@@ -41,6 +43,39 @@ export const PIECES: { choice: BuildChoice; name: string; icon: string }[] = [
   },
 ];
 
+// Small heads of the four characters, for the roster and the score tables.
+const HEADS = [
+  `<ellipse cx="12" cy="14" rx="7" ry="9" fill="#fbf8f2" stroke="#2b2a28" stroke-width="1.4"/><ellipse cx="12" cy="4.5" rx="3" ry="3.2" fill="#d8402f" stroke="#2b2a28" stroke-width="1.2"/><path d="M18 12 l5 2 l-5 2 z" fill="#f0a63a" stroke="#2b2a28" stroke-width="1"/><circle cx="15" cy="11" r="1.2" fill="#2b2a28"/>`,
+  `<circle cx="11" cy="13" r="7.5" fill="#d9a25a" stroke="#2b2a28" stroke-width="1.4"/><ellipse cx="18" cy="15" rx="4.5" ry="3.2" fill="#f3d9b0" stroke="#2b2a28" stroke-width="1.2"/><circle cx="21.5" cy="14.5" r="1.4" fill="#2b2a28"/><ellipse cx="6" cy="14" rx="3" ry="6" fill="#9b6a2a" stroke="#2b2a28" stroke-width="1.1"/><circle cx="13" cy="10.5" r="1.2" fill="#2b2a28"/>`,
+  `<rect x="7" y="4" width="13" height="8" rx="3.5" fill="#86c932" stroke="#2b2a28" stroke-width="1.2"/><rect x="8" y="9" width="7" height="8" fill="#86c932"/><path d="M3 15 h18 a2 2 0 0 1 0 0 l-2 6 a3 3 0 0 1 -3 2 h-8 a3 3 0 0 1 -3 -2 z" fill="#b76a36" stroke="#2b2a28" stroke-width="1.2"/><ellipse cx="9" cy="3.5" rx="2.5" ry="1.8" fill="#2b2a28"/><circle cx="11" cy="7" r="1.1" fill="#2b2a28"/>`,
+  `<circle cx="12" cy="12" r="9" fill="#fbfbfa" stroke="#2b2a28" stroke-width="1.4"/><ellipse cx="14" cy="12.5" rx="5.5" ry="4.5" fill="#f3e1c8" stroke="#2f86d9" stroke-width="1.2"/><rect x="9" y="13" width="10" height="4" rx="1.5" fill="#8cc4ef"/><circle cx="12" cy="11" r="0.9" fill="#2b2a28"/><circle cx="16" cy="11" r="0.9" fill="#2b2a28"/><path d="M12 3 v4" stroke="#2f86d9" stroke-width="1.6"/>`,
+];
+export const head = (character: number | null, colour = "#9a948a"): string =>
+  character === null
+    ? `<span class="head"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6" fill="${colour}"/></svg></span>`
+    : `<span class="head" title="${CHARACTERS[character].name}"><svg viewBox="0 0 24 24" aria-hidden="true">${HEADS[character]}</svg></span>`;
+
+// A map of a course, drawn from its data so it always matches what you get.
+export function courseMap(level: LevelDef): string {
+  const parts: string[] = [];
+  for (const b of level.blocks) {
+    const x = b.col * CELL, y = b.row * CELL, w = b.w * CELL, h = b.style === "shelf" || b.style === "peg" ? 20 : b.h * CELL;
+    const fill = b.style === "post" ? "#8d9194" : b.style === "floor" ? "#b8834f" : "#c08c58";
+    parts.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="4" fill="${fill}"/>`);
+  }
+  for (const f of level.fixtures) {
+    const fp = footprint(f);
+    const x = fp.col * CELL, y = fp.row * CELL;
+    if (f.type === "spike") parts.push(`<path d="M${x + 4} ${y + 40} L${x + 20} ${y + 12} L${x + 36} ${y + 40} Z" fill="#b24a3e"/>`);
+    else if (f.type === "fan") parts.push(`<circle cx="${x + 20}" cy="${y + 20}" r="16" fill="#5f87b0"/><path d="M${x + 44} ${y + 20} h60" stroke="#5f87b0" stroke-width="6" stroke-dasharray="14 10" opacity=".6"/>`);
+    else if (f.type === "moving") parts.push(`<rect x="${x + 60}" y="${y}" width="80" height="18" rx="4" fill="#6f8f5c"/><path d="M${x + 10} ${y + 30} H${x + fp.w * CELL - 10}" stroke="#6f8f5c" stroke-width="4" opacity=".6"/>`);
+  }
+  const { spawn, flag } = level;
+  parts.push(`<rect x="${spawn.x - 24}" y="${spawn.y - 56}" width="48" height="56" rx="6" fill="#6f8f5c" opacity=".35"/>`);
+  parts.push(`<path d="M${flag.x} ${flag.y} V${flag.y - 96}" stroke="#c9a03d" stroke-width="7"/><path d="M${flag.x} ${flag.y - 96} l50 18 l-50 18 z" fill="#b24a3e"/>`);
+  return `<svg viewBox="0 0 1280 720" aria-hidden="true"><rect width="1280" height="720" fill="#faf6ee"/>${parts.join("")}</svg>`;
+}
+
 let receivedAt = 0;
 export const snapshotArrived = (): void => {
   receivedAt = performance.now();
@@ -60,6 +95,7 @@ export function buildTray(onChoose: (c: BuildChoice) => void): void {
 
 // what to say about each player now, and whether it is settled
 function status(p: PlayerView, snap: Snapshot): { text: string; cls: string } {
+  if (snap.phase === "SELECT") return p.pick ? { text: `picked level ${p.pick}`, cls: "ok" } : { text: "choosing…", cls: "wait" };
   if (!p.active) return { text: "watching", cls: "" };
   switch (snap.phase) {
     case "BUILD":
@@ -79,13 +115,15 @@ const names = (ps: PlayerView[]): string => {
 };
 const pts = (n: number): string => (Number.isInteger(n) ? String(n) : n.toFixed(1));
 
-const PHASE_NAMES: Record<string, string> = { BUILD: "Build phase", COUNTDOWN: "Get ready", RUN: "Run phase", RESULTS: "Round end", LEVEL_END: "Game over" };
+const PHASE_NAMES: Record<string, string> = { SELECT: "Choose a level", BUILD: "Build phase", COUNTDOWN: "Get ready", RUN: "Run phase", RESULTS: "Round end", LEVEL_END: "Game over" };
 
 export function render(): void {
   const snap = store.snap;
   if (!snap) return;
-  el.where.textContent = snap.archivedFrom ? `Level ${snap.levelId}, built on level ${snap.archivedFrom}` : `Level ${snap.levelId}`;
-  el.round.textContent = snap.phase === "LEVEL_END" ? "Six rounds done" : `Round ${snap.round} of ${snap.maxRounds}`;
+  const course = levelById(snap.layout);
+  el.where.textContent = snap.phase === "SELECT" ? "Choosing a level"
+    : `Level ${course.id}: ${course.name} · game ${snap.levelId}${snap.archivedFrom ? `, built on game ${snap.archivedFrom}` : ""}`;
+  el.round.textContent = snap.phase === "SELECT" ? "New game" : snap.phase === "LEVEL_END" ? "Six rounds done" : `Round ${snap.round} of ${snap.maxRounds}`;
   el.pill.textContent = PHASE_NAMES[snap.phase];
   el.pill.className = `pill ${snap.phase === "RUN" || snap.phase === "COUNTDOWN" ? "run" : snap.phase === "BUILD" ? "" : "end"}`;
 
@@ -93,13 +131,13 @@ export function render(): void {
   el.roster.innerHTML = players
     .map((p) => {
       const s = status(p, snap);
-      return `<li class="${p.id === store.me ? "me" : ""} ${p.active ? "" : "watching"}"><span class="dot" style="background:${p.colour}"></span><span class="name">${escape(p.name)}${p.id === store.me ? " (you)" : ""}</span><span class="pts" title="points this game">${pts(p.points)}</span><span class="state ${s.cls}">${s.text}</span></li>`;
+      return `<li class="${p.id === store.me ? "me" : ""} ${p.active || snap.phase === "SELECT" ? "" : "watching"}">${head(p.character, p.colour)}<span class="name">${escape(p.name)}${p.id === store.me ? " (you)" : ""}</span><span class="pts" title="points this game">${pts(p.points)}</span><span class="state ${s.cls}">${s.text}</span></li>`;
     })
     .join("");
 
   for (const li of el.steps.querySelectorAll<HTMLElement>("li")) {
     const step = li.dataset.step;
-    li.classList.toggle("now", step === snap.phase || (step === "RESULTS" && snap.phase === "LEVEL_END"));
+    li.classList.toggle("now", step === snap.phase || (step === "RESULTS" && snap.phase === "LEVEL_END") || (step === "BUILD" && snap.phase === "SELECT"));
   }
 
   const building = iCanBuild();
@@ -138,6 +176,17 @@ export function renderPhase(): void {
   let tally = "";
 
   switch (snap.phase) {
+    case "SELECT": {
+      const left = remaining(snap.phaseRemainingMs);
+      guide = "Choose the course for this game. When everyone has picked, the most picked wins; a tie goes to the lower level.";
+      const cards = LEVELS.map((l) => {
+        const pickers = snap.players.filter((p) => p.pick === l.id).map((p) => head(p.character, p.colour)).join("");
+        return `<button type="button" class="level" data-pick="${l.id}">${courseMap(l)}<span class="lname">Level ${l.id} · ${l.name}</span><span class="blurb">${l.blurb}</span><span class="pickers">${pickers}</span></button>`;
+      }).join("");
+      overlay = `<div class="card select"><h2>Choose a level</h2><div class="levels">${cards}</div><p class="tally"></p></div>`;
+      tally = left === null ? "Waiting for the first pick" : `Starting in ${Math.ceil(left / 1000)} s, or when everyone has picked`;
+      break;
+    }
     case "BUILD": {
       const waiting = others.filter((p) => p.build === "WAITING");
       if (iCanBuild()) {
@@ -171,30 +220,33 @@ export function renderPhase(): void {
       guide = snap.round >= snap.maxRounds ? "That was the last round. Final scores next." : `Next: build round ${snap.round + 1}. The level stays as it is.`;
       const rows = [...active]
         .sort((a, b) => b.gained - a.gained || b.points - a.points)
-        .map((p) => `<tr><td><span class="who"><span class="dot" style="background:${p.colour}"></span>${escape(p.name)}</span></td><td>${status(p, snap).text}</td><td class="gain">${p.gained ? `+${pts(p.gained)}` : ""}</td><td>${pts(p.points)}</td></tr>`)
+        .map((p) => `<tr><td><span class="who">${head(p.character, p.colour)}${escape(p.name)}</span></td><td>${status(p, snap).text}</td><td class="gain">${p.gained ? `+${pts(p.gained)}` : ""}</td><td>${pts(p.points)}</td></tr>`)
         .join("");
       const summary = made.length === 0 ? "Nobody reached the flag." : made.length === active.length ? "Everyone reached the flag." : `${made.length} of ${active.length} reached the flag.`;
       overlay = `<div class="card"><h2>Round ${snap.round} complete</h2><p>${summary}</p><table>${rows}</table></div>`;
       break;
     }
     case "LEVEL_END": {
-      const left = remaining(snap.phaseRemainingMs) ?? 0;
+      const left = remaining(snap.phaseRemainingMs);
       const keep = snap.players.filter((p) => p.vote === "ARCHIVE").length;
       const restart = snap.players.filter((p) => p.vote === "RESTART").length;
-      guide = "Keep this level and build on it next game, or start bare? Majority decides; a tie keeps it.";
+      guide = "Keep this level and build on it next game, or choose a new one? Majority decides; a tie keeps it.";
+      const best = Math.max(1, ...snap.scores.map((r) => r.points));
       const rows = snap.scores.length
         ? snap.scores
-            .map((s, i) => `<tr class="${i === 0 ? "first" : ""}"><td><span class="who"><span class="dot" style="background:${s.colour}"></span>${escape(s.name)}</span></td><td>${s.finishes} flag${s.finishes === 1 ? "" : "s"}</td><td>${s.kills} spiked</td><td>${pts(s.points)}</td></tr>`)
+            .map((r, i) => `<li class="row" data-rank="${i}" data-points="${r.points}" data-pct="${Math.round((r.points / best) * 100)}">
+              <span class="rank">${i + 1}</span>${head(r.character, r.colour)}<span class="who">${escape(r.name)}<small>${r.finishes} flag${r.finishes === 1 ? "" : "s"} · ${r.kills} spiked</small></span>
+              <span class="bar"><span style="background:${r.colour}"></span></span><span class="pts">0</span></li>`)
             .join("")
-        : `<tr><td colspan="4">Nobody scored this game.</td></tr>`;
-      const mine = me?.vote ?? null;
-      overlay = `<div class="card"><h2>Final scores</h2><p>Six rounds on level ${snap.levelId}.</p><table>${rows}</table>
+        : `<li class="row shown">Nobody scored this game.</li>`;
+      // the table is rebuilt only once per game, so the reveal plays once
+      overlay = `<div class="card final" data-game="${snap.levelId}"><h2>Final scores</h2><p>Six rounds on level ${snap.layout}: ${levelById(snap.layout).name}.</p><ol class="board">${rows}</ol>
         <div class="vote">
-          <button type="button" data-vote="ARCHIVE" aria-pressed="${mine === "ARCHIVE"}">Keep building on it</button>
-          <button type="button" data-vote="RESTART" aria-pressed="${mine === "RESTART"}">Start a bare level</button>
+          <button type="button" data-vote="ARCHIVE">Keep building on it</button>
+          <button type="button" data-vote="RESTART">Choose a new level</button>
         </div>
         <p class="tally"></p></div>`;
-      tally = `${keep} keep · ${restart} restart · decided in ${Math.ceil(left / 1000)} s`;
+      tally = `${keep} keep · ${restart} new level · decided in ${Math.ceil((left ?? 0) / 1000)} s`;
       break;
     }
   }
@@ -202,18 +254,68 @@ export function renderPhase(): void {
   // replay once per number, and buttons must not be swapped out under a click.
   // (Compare with what was generated, not innerHTML, which the browser rewrites.)
   if (guide !== lastGuide) el.guide.innerHTML = lastGuide = guide;
-  if (overlay !== lastOverlay) el.overlay.innerHTML = lastOverlay = overlay;
+  if (overlay !== lastOverlay) {
+    el.overlay.innerHTML = lastOverlay = overlay;
+    const final = el.overlay.querySelector<HTMLElement>(".final");
+    if (final) revealScores(final);
+  }
   const t = el.overlay.querySelector(".tally");
   if (t && t.textContent !== tally) t.textContent = tally;
+  // my own choice, without rebuilding the card
+  for (const b of el.overlay.querySelectorAll<HTMLButtonElement>("[data-vote]")) b.setAttribute("aria-pressed", String(me?.vote === b.dataset.vote));
+  for (const b of el.overlay.querySelectorAll<HTMLButtonElement>("[data-pick]")) b.setAttribute("aria-pressed", String(me?.pick === Number(b.dataset.pick)));
   el.overlay.hidden = overlay === "";
 }
+
+const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+// The final table, revealed from last place to first: each row slides in,
+// its bar grows and its points count up; then the leader is lit and the vote
+// appears.
+function revealScores(card: HTMLElement): void {
+  const rows = [...card.querySelectorAll<HTMLElement>(".row[data-rank]")].reverse();
+  const show = (row: HTMLElement): void => {
+    row.classList.add("shown");
+    const bar = row.querySelector<HTMLElement>(".bar span")!;
+    const pts = row.querySelector<HTMLElement>(".pts")!;
+    const target = Number(row.dataset.points);
+    bar.style.width = `${row.dataset.pct}%`;
+    if (reducedMotion.matches) {
+      pts.textContent = fmt(target);
+      return;
+    }
+    const start = performance.now();
+    const step = (now: number): void => {
+      const k = Math.min(1, (now - start) / 800);
+      pts.textContent = fmt(Math.round(target * (1 - (1 - k) ** 3) * 10) / 10);
+      if (k < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  };
+  const finish = (): void => {
+    const top = card.querySelectorAll<HTMLElement>(".row[data-rank]");
+    const best = Number(top[0]?.dataset.points ?? 0);
+    if (best > 0) for (const r of top) if (Number(r.dataset.points) === best) r.classList.add("winner");
+    card.classList.add("ready");
+  };
+  if (reducedMotion.matches) {
+    rows.forEach(show);
+    finish();
+    return;
+  }
+  rows.forEach((row, i) => setTimeout(() => show(row), 500 + i * 650));
+  setTimeout(finish, 500 + rows.length * 650 + 600);
+}
+const fmt = (n: number): string => (Number.isInteger(n) ? String(n) : n.toFixed(1));
 let lastGuide = "";
 let lastOverlay = "";
 
-export function onVote(fn: (v: Vote) => void): void {
+export function onVote(fn: (v: Vote) => void, onPick: (level: number) => void): void {
   el.overlay.addEventListener("click", (e) => {
-    const b = (e.target as HTMLElement).closest<HTMLButtonElement>("[data-vote]");
-    if (b) fn(b.dataset.vote as Vote);
+    const v = (e.target as HTMLElement).closest<HTMLButtonElement>("[data-vote]");
+    if (v) fn(v.dataset.vote as Vote);
+    const p = (e.target as HTMLElement).closest<HTMLButtonElement>("[data-pick]");
+    if (p) onPick(Number(p.dataset.pick));
   });
 }
 

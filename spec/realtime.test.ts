@@ -1,6 +1,7 @@
 import { io, type Socket } from "socket.io-client";
 import { afterAll, expect, inject, it } from "vitest";
 import { COLS, ROWS, type Proposal, placementError } from "../src/shared/level.ts";
+import { levelById } from "../src/shared/levels.ts";
 import type { ClientToServer, ServerToClient, Snapshot } from "../src/shared/protocol.ts";
 
 // Two real clients against the running app: a committed piece reaches the
@@ -36,6 +37,12 @@ const emitAck = <T>(fn: (ack: (r: T) => void) => void): Promise<T> => new Promis
 it("S1, S2, S5: a placed piece reaches the other client, persists, and can be demolished", async () => {
   const a = connect("A");
   const b = connect("B");
+  // a fresh server starts by choosing a level: both pick one
+  await until(() => !!a.snap && !!b.snap, 5000, "snapshots");
+  if (a.snap!.phase === "SELECT") {
+    a.emit("level:pick", 1);
+    b.emit("level:pick", 1);
+  }
   // both on the roster of a BUILD (a previous run may still be finishing)
   await until(() => me(a)?.build === "WAITING" && me(b)?.build === "WAITING" && a.snap?.phase === "BUILD", 30_000, "a BUILD with both players");
 
@@ -44,7 +51,7 @@ it("S1, S2, S5: a placed piece reaches the other client, persists, and can be de
   for (let row = 1; row < ROWS && !spot; row++)
     for (let col = 0; col < COLS - 3 && !spot; col++) {
       const p: Proposal = { type: "platform", col, row, rot: 0 };
-      if (placementError(a.snap!.items, p) === null) spot = p;
+      if (placementError(levelById(a.snap!.layout), a.snap!.items, p) === null) spot = p;
     }
   expect(spot).not.toBeNull();
 

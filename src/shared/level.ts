@@ -1,6 +1,8 @@
-// The level: a fixed base course on a grid, plus whatever players have placed.
-// Validation here is technical only (docs/ITEMS.md): bounds, protected START
-// and GOAL, and overlap. It never asks whether the level can still be finished.
+// The grid, the pieces and the placement rules. The three base courses live in
+// levels.ts. Validation here is technical only (docs/ITEMS.md): bounds,
+// protected START and GOAL, and overlap. It never asks whether the level can
+// still be finished.
+import type { LevelDef } from "./levels.ts";
 
 export const CELL = 40;
 export const COLS = 32;
@@ -12,23 +14,6 @@ export const DEATH_Y = HEIGHT + 40;
 
 export interface CellRect { col: number; row: number; w: number; h: number }
 export interface PixelRect { x: number; y: number; w: number; h: number }
-
-// Base geometry. Round 1 is passable: run, jump, one wall climb up the tower.
-export const BASE_BLOCKS: readonly CellRect[] = [
-  { col: 0, row: 14, w: 6, h: 4 }, // start ledge
-  { col: 10, row: 14, w: 3, h: 4 },
-  { col: 16, row: 12, w: 3, h: 6 },
-  { col: 22, row: 9, w: 2, h: 9 }, // the tower
-  { col: 27, row: 10, w: 5, h: 8 }, // goal ledge
-];
-
-// Nobody may build here. START covers where players spawn; GOAL covers the flag.
-export const START_ZONE: CellRect = { col: 0, row: 10, w: 5, h: 4 };
-export const GOAL_ZONE: CellRect = { col: 28, row: 7, w: 3, h: 3 };
-export const SPAWN = { x: 2 * CELL, y: 14 * CELL }; // feet on the start ledge
-export const FLAG = { x: 29.5 * CELL, y: 10 * CELL }; // foot of the pole
-// touching this finishes the run
-export const GOAL_TRIGGER: PixelRect = { x: 28.5 * CELL, y: 7.5 * CELL, w: 2 * CELL, h: 2.5 * CELL };
 
 export const ITEM_TYPES = ["platform", "spring", "spike", "fan", "moving"] as const;
 export type ItemType = (typeof ITEM_TYPES)[number];
@@ -45,6 +30,8 @@ export interface Item {
   createdBy: string; // display name, shown on hover
   createdById: string; // who scores when this spike kills someone else
   createdRound: number;
+  // course swings only: the height (px) the plank hangs from, drawn as ropes
+  hangFrom?: number;
 }
 
 export interface Proposal { type: ItemType; col: number; row: number; rot: number }
@@ -61,7 +48,7 @@ export const footprint = (p: Placed): CellRect => {
 
 // Moving platforms slide along their track on a fixed cycle from the start of
 // the run, the same on every client.
-export const MOVING_PERIOD_MS = 3000;
+export const MOVING_PERIOD_MS = 6000; // slow enough to read and step onto
 export const MOVING_TRAVEL = 3 * CELL;
 export function movingOffset(p: Placed, runMs: number): { dx: number; dy: number } {
   const k = (1 - Math.cos((2 * Math.PI * runMs) / MOVING_PERIOD_MS)) / 2;
@@ -107,7 +94,7 @@ const overlaps = (a: CellRect, b: CellRect): boolean =>
 export const isItemType = (v: unknown): v is ItemType => typeof v === "string" && (ITEM_TYPES as readonly string[]).includes(v);
 
 // null when the placement is allowed, otherwise a short reason for the player
-export function placementError(items: readonly Item[], p: unknown): string | null {
+export function placementError(level: LevelDef, items: readonly Item[], p: unknown): string | null {
   if (typeof p !== "object" || p === null) return "nothing to place";
   const { type, col, row, rot } = p as Record<string, unknown>;
   if (!isItemType(type)) return "unknown piece";
@@ -115,15 +102,17 @@ export function placementError(items: readonly Item[], p: unknown): string | nul
   if (!Number.isInteger(rot) || (rot as number) < 0 || (rot as number) >= ROTATIONS[type]) return "bad rotation";
   const f = footprint({ type, col: col as number, row: row as number, rot: rot as number });
   if (f.col < 0 || f.row < 0 || f.col + f.w > COLS || f.row + f.h > ROWS) return "outside the level";
-  if (overlaps(f, START_ZONE)) return "the start must stay clear";
-  if (overlaps(f, GOAL_ZONE)) return "the flag must stay clear";
-  if (BASE_BLOCKS.some((b) => overlaps(f, b))) return "that space is solid";
+  if (overlaps(f, level.start)) return "the start must stay clear";
+  if (overlaps(f, level.goal)) return "the flag must stay clear";
+  if (level.blocks.some((b) => overlaps(f, b))) return "that space is solid";
+  if (level.fixtures.some((i) => overlaps(f, footprint(i)))) return "that is part of the level";
   if (items.some((i) => overlaps(f, footprint(i)))) return "another piece is there";
   return null;
 }
 
-// The Bomb only ever targets player-placed items. START, GOAL, base geometry
-// and world bounds have no item id, so they can never be named here.
+// The Bomb only ever targets player-placed items. START, GOAL, base geometry,
+// the level's own fixtures and world bounds are not in `items`, so they can
+// never be named here.
 export function demolitionError(items: readonly Item[], targetId: unknown): string | null {
   if (typeof targetId !== "string" || !items.some((i) => i.id === targetId)) return "nothing there to demolish";
   return null;

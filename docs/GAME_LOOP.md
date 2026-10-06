@@ -3,14 +3,21 @@
 ## State machine
 
 ```text
+SELECT (choose one of three levels) ──▶ BUILD
 BUILD ──(no active player WAITING)──▶ COUNTDOWN ──▶ RUN
   ▲                                                  │
   ├──── RESULTS ◀──────(no active player RUNNING)────┘
   │        │ after round 6
   └── LEVEL_END (final scores, vote: archive or restart)
+                    restart ──▶ SELECT
 ```
 
 The level persists across every transition. The server owns the phase.
+
+Before a game, everyone connected picks one of three fixed courses
+(`src/shared/levels.ts`: The Gaps, The Tower, The Swing). The first pick
+starts a 20 s count; it closes early once everyone has picked. Most picks
+wins, a tie goes to the lower level number. Picks are ephemeral.
 
 A game lasts **six rounds** on one level. After round 6 comes LEVEL_END: the
 final scores, and a vote on what happens to the level (below). Each player
@@ -104,7 +111,8 @@ After round 6's results everyone connected votes:
 - **Archive:** this level is archived with its scores, and the next game
   starts at round 1 on a copy of it, every surviving item still in place, to
   keep building on.
-- **Restart:** the next game starts on a bare level.
+- **Restart:** players choose a course again (SELECT), and the next game
+  starts on it bare.
 
 Majority wins once everyone connected has voted, or after 30 s. A tie or
 no votes means archive, so nobody's work is thrown away by default. Scores

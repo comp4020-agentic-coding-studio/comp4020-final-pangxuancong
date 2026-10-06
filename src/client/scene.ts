@@ -4,22 +4,29 @@
 // characters are interpolated from their snapshots and never collide.
 import Phaser from "phaser";
 import {
-  BASE_BLOCKS, CELL, COLS, DEATH_Y, FAN_DIRS, FLAG, GOAL_TRIGGER, GOAL_ZONE, HEIGHT, type Item, type PixelRect, type Proposal, ROWS,
-  SPAWN, START_ZONE, WIDTH, body, cellToPixels, fanZone, footprint, movingOffset, placementError,
+  CELL, COLS, DEATH_Y, FAN_DIRS, HEIGHT, type Item, type PixelRect, type Proposal, ROWS,
+  WIDTH, body, cellToPixels, fanZone, footprint, movingOffset, placementError,
 } from "../shared/level.ts";
+import { type Block, type LevelDef, levelById } from "../shared/levels.ts";
 import { MOVEMENT, type Side, canWallJump, wallJumpVelocity } from "../shared/movement.ts";
 import type { Phase } from "../shared/rounds.ts";
-import { C, type Pose, drawBlock, drawFanBlades, drawFigure, drawItem, drawMovingPlank, drawTravel, hex } from "./draw.ts";
+import { C, type Pose, drawCharacter, drawCourseBlock, drawFanBlades, drawItem, drawMovingPlank, drawTravel, hex } from "./draw.ts";
 import { bus, iCanBuild, store } from "./state.ts";
 
 const POSE_EVERY_MS = 80; // ~12 a second
 const INTERP_DELAY_MS = 110;
-// figures are drawn a little larger than their collision box, to read at a glance
-const FIGURE_SCALE = 1.25;
+// characters are drawn a little wider than their collision box, to read at a glance
+const FIGURE_SCALE = 1.3;
+// shelves and pegs are planks: only their top is solid
+const blockBody = (b: Block): PixelRect => {
+  const r = cellToPixels(b);
+  return b.style === "shelf" ? { ...r, h: 20 } : b.style === "peg" ? { ...r, h: 16 } : r;
+};
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
 interface PlacedView {
   item: Item;
+  fixed: boolean; // part of the course: never demolished
   view: Phaser.GameObjects.Container;
   solid: Phaser.GameObjects.Rectangle;
   // fans: blades and wind, redrawn every frame
@@ -32,6 +39,9 @@ interface Remote {
   view: Phaser.GameObjects.Container;
   figure: Phaser.GameObjects.Graphics;
   colour: number;
+  character: number;
+  lastVy: number;
+  lastDustAt: number;
   facing: -1 | 1;
   samples: { t: number; x: number; y: number; vx: number; vy: number; facing: -1 | 1 }[];
   gone: boolean;
@@ -42,7 +52,10 @@ interface Local {
   view: Phaser.GameObjects.Container;
   figure: Phaser.GameObjects.Graphics;
   colour: number;
+  character: number;
   facing: -1 | 1;
+  lastDustAt: number;
+  fallSpeed: number; // how hard the last fall was, for the landing dust
   lastWallTouchAt: number | null;
   lastWallSide: Side;
   wasOnGround: boolean;
@@ -72,6 +85,11 @@ export class LevelScene extends Phaser.Scene {
   private phase: Phase | null = null;
   private runStartedAt = 0; // performance.now() when RUN began, for moving platforms
   private spin = 0; // fan blades
+  private course: LevelDef = levelById(1);
+  private courseLayout = 0; // which course is built, 0 for none yet
+  private courseObjects: Phaser.GameObjects.GameObject[] = [];
+  private dust!: Phaser.GameObjects.Particles.ParticleEmitter;
+  private sparks!: Phaser.GameObjects.Particles.ParticleEmitter;
   hoverInfo = "";
   // set by main.ts; called once the scene exists
   onReady = (): void => {};
@@ -90,7 +108,22 @@ export class LevelScene extends Phaser.Scene {
 
     this.buildLayer = this.add.graphics().setDepth(0);
     this.traceLayer = this.add.graphics().setDepth(1);
-    this.drawFixtures();
+    this.drawBackdrop();
+    this.buildCourse(levelById(1));
+    // particles: soft dust for feet, little sparks for springs and wall kicks
+    const dot = this.make.graphics({ x: 0, y: 0 }, false);
+    dot.fillStyle(0xffffff, 1);
+    dot.fillCircle(5, 5, 5);
+    dot.generateTexture("dot", 10, 10);
+    dot.destroy();
+    this.dust = this.add.particles(0, 0, "dot", {
+      lifespan: { min: 280, max: 520 }, speed: { min: 18, max: 70 }, scale: { start: 0.55, end: 0 },
+      alpha: { start: 0.55, end: 0 }, tint: [0xd8cbb2, 0xc9b896, 0xe6dccb], gravityY: -30, emitting: false,
+    }).setDepth(14);
+    this.sparks = this.add.particles(0, 0, "dot", {
+      lifespan: { min: 250, max: 450 }, speed: { min: 60, max: 150 }, scale: { start: 0.35, end: 0 },
+      alpha: { start: 0.9, end: 0 }, gravityY: 300, emitting: false,
+    }).setDepth(16);
     this.ghost = this.add.graphics().setDepth(20);
     this.ghostPiece = this.add.graphics().setDepth(20);
 
@@ -110,9 +143,9 @@ export class LevelScene extends Phaser.Scene {
 
   // ---------- the fixed course ----------
 
-  private drawFixtures(): void {
+  private drawBackdrop(): void {
     // the back of the display box: soft vertical boards, and a dark fall-off
-    // at the bottom so the gaps read as somewhere you can fall
+    // at the bottom so any gap reads as somewhere you can fall
     const back = this.add.graphics().setDepth(-2);
     back.fillStyle(C.paperLight, 1);
     back.fillRect(0, 0, WIDTH, HEIGHT);
@@ -124,44 +157,70 @@ export class LevelScene extends Phaser.Scene {
       back.fillStyle(C.ink, 0.035 * (i + 1));
       back.fillRect(0, HEIGHT - 6 * (6 - i), WIDTH, 6);
     }
+  }
 
-    const g = this.add.graphics().setDepth(5);
-    for (const b of BASE_BLOCKS) {
-      const r = cellToPixels(b);
-      drawBlock(g, r.x, r.y, r.w, r.h);
-      this.addSolid(this.solids, r.x, r.y, r.w, r.h);
+  // Everything that belongs to one course: blocks, signs, the flag, the goal.
+  // Built again when the game moves to a different course.
+  private buildCourse(def: LevelDef): void {
+    for (const o of this.courseObjects) o.destroy();
+    this.courseObjects = [];
+    this.course = def;
+    this.courseLayout = def.id;
+    const keep = <T extends Phaser.GameObjects.GameObject>(o: T): T => {
+      this.courseObjects.push(o);
+      return o;
+    };
+
+    const decor = keep(this.add.graphics().setDepth(3));
+    decor.lineStyle(3, C.steelDark, 0.8);
+    for (const d of def.decor) decor.lineBetween(d.from[0] * CELL, d.from[1] * CELL, d.to[0] * CELL, d.to[1] * CELL);
+
+    const g = keep(this.add.graphics().setDepth(5));
+    // posts behind shelves, floor last so it sits in front of legs
+    const order = ["post", "crate", "peg", "shelf", "floor"];
+    for (const blk of [...def.blocks].sort((a, b) => order.indexOf(a.style) - order.indexOf(b.style))) {
+      const r = cellToPixels(blk);
+      drawCourseBlock(g, blk.style, r.x, r.y, r.w, r.h);
+      const solid = blockBody(blk);
+      keep(this.addSolid(this.solids, solid.x, solid.y, solid.w, solid.h));
     }
 
-    // START: a small painted sign on the ledge
-    const sign = this.add.graphics().setDepth(4);
+    // START: a small painted sign by the spawn
+    const { spawn, flag } = def;
+    const sign = keep(this.add.graphics().setDepth(4));
     sign.fillStyle(C.woodDeep, 1);
-    sign.fillRect(SPAWN.x + 70, SPAWN.y - 40, 4, 40);
+    sign.fillRect(spawn.x + 30, spawn.y - 40, 4, 40);
     sign.fillStyle(C.woodLight, 1);
     sign.lineStyle(2, C.woodDeep, 1);
-    sign.fillRoundedRect(SPAWN.x + 40, SPAWN.y - 64, 64, 26, 3);
-    sign.strokeRoundedRect(SPAWN.x + 40, SPAWN.y - 64, 64, 26, 3);
-    this.add.text(SPAWN.x + 72, SPAWN.y - 51, "START", { fontFamily: "Georgia, serif", fontSize: "14px", fontStyle: "bold", color: "#4a3420" })
-      .setOrigin(0.5).setDepth(4);
+    sign.fillRoundedRect(spawn.x, spawn.y - 66, 64, 26, 3);
+    sign.strokeRoundedRect(spawn.x, spawn.y - 66, 64, 26, 3);
+    keep(this.add.text(spawn.x + 32, spawn.y - 53, "START", { fontFamily: "Georgia, serif", fontSize: "14px", fontStyle: "bold", color: "#4a3420" })
+      .setOrigin(0.5).setDepth(4));
 
-    // GOAL: a brass pole and a red cloth flag that stirs
-    const pole = this.add.graphics().setDepth(6);
+    // GOAL: a brass pole and a red cloth flag that stirs, and a small sign
+    const pole = keep(this.add.graphics().setDepth(6));
     pole.fillStyle(C.ink, 0.12);
-    pole.fillEllipse(FLAG.x + 2, FLAG.y + 1, 26, 5);
+    pole.fillEllipse(flag.x + 2, flag.y + 1, 26, 5);
     pole.fillStyle(C.woodDeep, 1);
-    pole.fillRoundedRect(FLAG.x - 10, FLAG.y - 6, 20, 6, 2);
+    pole.fillRoundedRect(flag.x - 10, flag.y - 6, 20, 6, 2);
     pole.fillStyle(C.brass, 1);
-    pole.fillRect(FLAG.x - 2, FLAG.y - 96, 4, 92);
-    pole.fillCircle(FLAG.x, FLAG.y - 98, 4);
+    pole.fillRect(flag.x - 2, flag.y - 96, 4, 92);
+    pole.fillCircle(flag.x, flag.y - 98, 4);
     const cloth = this.add.graphics();
     cloth.fillStyle(C.red, 1);
     cloth.fillTriangle(0, 0, 0, 32, 48, 14);
     cloth.fillStyle(C.redDark, 1);
     cloth.fillTriangle(0, 18, 0, 32, 30, 22);
-    this.flag = this.add.container(FLAG.x + 2, FLAG.y - 94, [cloth]).setDepth(6);
+    this.flag = keep(this.add.container(flag.x + 2, flag.y - 94, [cloth]).setDepth(6));
     if (!reducedMotion.matches) this.tweens.add({ targets: this.flag, scaleX: 0.86, duration: 900, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    pole.fillStyle(C.woodLight, 1);
+    pole.lineStyle(2, C.woodDeep, 1);
+    pole.fillRoundedRect(flag.x - 58, flag.y - 34, 50, 22, 3);
+    pole.strokeRoundedRect(flag.x - 58, flag.y - 34, 50, 22, 3);
+    keep(this.add.text(flag.x - 33, flag.y - 23, "GOAL", { fontFamily: "Georgia, serif", fontSize: "12px", fontStyle: "bold", color: "#4a3420" }).setOrigin(0.5).setDepth(6));
 
-    const t = GOAL_TRIGGER;
-    this.goal = this.add.zone(t.x + t.w / 2, t.y + t.h / 2, t.w, t.h);
+    const t = def.goalTrigger;
+    this.goal = keep(this.add.zone(t.x + t.w / 2, t.y + t.h / 2, t.w, t.h));
     this.physics.add.existing(this.goal, true);
   }
 
@@ -177,7 +236,12 @@ export class LevelScene extends Phaser.Scene {
   applySnapshot(): void {
     const snap = store.snap;
     if (!snap) return;
-    this.syncItems(snap.items);
+    if (snap.layout !== this.courseLayout) {
+      this.clearCharacters();
+      this.buildCourse(levelById(snap.layout));
+    }
+    // the course's own pieces work exactly like placed ones
+    this.syncItems([...this.course.fixtures, ...snap.items]);
     if (snap.phase !== this.phase) this.enterPhase(snap.phase, snap.phaseElapsedMs);
     this.syncPlayers();
     this.drawBuildLayer();
@@ -238,9 +302,9 @@ export class LevelScene extends Phaser.Scene {
         solid = this.addSolid(group, b.x, b.y, b.w, b.h);
       }
       const blades = item.type === "fan" ? this.add.graphics().setDepth(9) : undefined;
-      this.placed.set(item.id, { item, view, solid, blades, plank });
+      this.placed.set(item.id, { item, view, solid, blades, plank, fixed: item.id.startsWith("fixture-") });
       // newly committed while we watch: it settles into place
-      if (this.phase && !reducedMotion.matches) {
+      if (this.phase && !reducedMotion.matches && !item.id.startsWith("fixture-")) {
         view.y -= 14;
         view.alpha = 0.3;
         this.tweens.add({ targets: view, y: view.y + 14, alpha: 1, duration: 280, ease: "Back.out" });
@@ -259,7 +323,7 @@ export class LevelScene extends Phaser.Scene {
     g.fillStyle(C.ink, 0.13);
     for (let c = 1; c < COLS; c++) for (let r = 1; r < ROWS; r++) g.fillCircle(c * CELL, r * CELL, 1.2);
     // protected areas, shown only while relevant
-    for (const z of [START_ZONE, GOAL_ZONE]) {
+    for (const z of [this.course.start, this.course.goal]) {
       const r = cellToPixels(z);
       g.fillStyle(C.green, 0.07);
       g.fillRoundedRect(r.x + 2, r.y + 2, r.w - 4, r.h - 4, 8);
@@ -277,6 +341,10 @@ export class LevelScene extends Phaser.Scene {
 
   // ---------- characters ----------
 
+  private characterOf(id: string): number {
+    return store.snap?.players.find((q) => q.id === id)?.character ?? 0;
+  }
+
   private colourOf(id: string): number {
     const p = store.snap?.players.find((q) => q.id === id);
     return p ? hex(p.colour) : C.inkSoft;
@@ -286,7 +354,7 @@ export class LevelScene extends Phaser.Scene {
   private spawnFor(id: string): { x: number; y: number } {
     const active = (store.snap?.players ?? []).filter((p) => p.active);
     const i = Math.max(0, active.findIndex((p) => p.id === id));
-    return { x: SPAWN.x - 44 + i * 24, y: SPAWN.y };
+    return { x: this.course.spawn.x - 28 + i * 18, y: this.course.spawn.y };
   }
 
   private placeAtStart(live: boolean): void {
@@ -306,6 +374,7 @@ export class LevelScene extends Phaser.Scene {
 
   private createLocal(x: number, y: number, live: boolean): void {
     const colour = this.colourOf(store.me);
+    const character = this.characterOf(store.me);
     const rect = this.add.rectangle(x, y - 14, 20, 28).setVisible(false);
     this.physics.add.existing(rect);
     const b = rect.body as Phaser.Physics.Arcade.Body;
@@ -313,12 +382,12 @@ export class LevelScene extends Phaser.Scene {
     b.setMaxVelocity(1000, MOVEMENT.maxFallSpeed);
     b.setAllowGravity(live);
     const figure = this.add.graphics().setScale(FIGURE_SCALE);
-    drawFigure(figure, colour, 1);
+    drawCharacter(figure, character, 1);
     // a small marker so you can find yourself among several
-    const you = this.add.triangle(0, -52, 0, 0, 10, 0, 5, 7, colour).setOrigin(0.5);
-    const label = this.add.text(0, -63, "You", { fontFamily: "system-ui, sans-serif", fontSize: "11px", fontStyle: "bold", color: "#4a4640" }).setOrigin(0.5);
+    const you = this.add.triangle(0, -64, 0, 0, 10, 0, 5, 7, colour).setOrigin(0.5);
+    const label = this.add.text(0, -75, "You", { fontFamily: "system-ui, sans-serif", fontSize: "11px", fontStyle: "bold", color: "#4a4640" }).setOrigin(0.5);
     const view = this.add.container(x, y, [figure, you, label]).setDepth(15);
-    this.local = { rect, view, figure, colour, facing: 1, lastWallTouchAt: null, lastWallSide: 1, wasOnGround: false, live, lastPoseAt: 0 };
+    this.local = { rect, view, figure, colour, character, facing: 1, lastDustAt: 0, fallSpeed: 0, lastWallTouchAt: null, lastWallSide: 1, wasOnGround: false, live, lastPoseAt: 0 };
     this.physics.add.collider(rect, this.solids);
     this.physics.add.collider(rect, this.movers);
     this.physics.add.collider(rect, this.springs, (_p, s) => this.bounce(s as Phaser.GameObjects.Rectangle));
@@ -335,12 +404,13 @@ export class LevelScene extends Phaser.Scene {
     let r = this.remotes.get(id);
     if (r) return r;
     const colour = this.colourOf(id);
+    const character = this.characterOf(id);
     const figure = this.add.graphics().setScale(FIGURE_SCALE);
-    drawFigure(figure, colour, 1);
+    drawCharacter(figure, character, 1);
     const name = store.snap?.players.find((p) => p.id === id)?.name ?? "";
-    const label = this.add.text(0, -52, name, { fontFamily: "system-ui, sans-serif", fontSize: "11px", color: "#6a655d" }).setOrigin(0.5);
+    const label = this.add.text(0, -64, name, { fontFamily: "system-ui, sans-serif", fontSize: "11px", color: "#6a655d" }).setOrigin(0.5);
     const view = this.add.container(0, 0, [figure, label]).setDepth(12).setAlpha(0.92);
-    r = { view, figure, colour, facing: 1, samples: [], gone: false };
+    r = { view, figure, colour, character, lastVy: 0, lastDustAt: 0, facing: 1, samples: [], gone: false };
     this.remotes.set(id, r);
     return r;
   }
@@ -397,6 +467,7 @@ export class LevelScene extends Phaser.Scene {
     const top = (spring.body as Phaser.Physics.Arcade.StaticBody).top;
     if (b.bottom > top + 6) return; // only the pad launches
     b.setVelocityY(-MOVEMENT.springVelocity);
+    this.spark(l.rect.x, b.bottom, C.mustard, 8, { min: 200, max: 340 });
     const pv = [...this.placed.values()].find((v) => v.solid === spring);
     if (pv && !reducedMotion.matches) this.tweens.add({ targets: pv.view, scaleY: 0.6, duration: 70, yoyo: true, ease: "Quad.out" });
   }
@@ -408,6 +479,7 @@ export class LevelScene extends Phaser.Scene {
     const x = l.rect.x, y = l.rect.y + 14;
     if (!fromServer) bus.result({ result: "DEAD", x, y: Math.min(y, HEIGHT), by });
     this.puff(x, Math.min(y, HEIGHT - 10) - 14, l.colour);
+    this.spark(x, Math.min(y, HEIGHT - 10) - 16, l.colour, 12, { min: 0, max: 360 });
     l.rect.destroy();
     l.view.destroy();
     this.local = null;
@@ -433,6 +505,39 @@ export class LevelScene extends Phaser.Scene {
     bus.say("You reached the flag. +1");
   }
 
+  // ---------- particles ----------
+
+  // a little dust kicked back from the feet while running
+  private kickDust(x: number, y: number, n: number, facing: -1 | 1): void {
+    if (reducedMotion.matches) return;
+    this.dust.setParticleSpeed(20, 60);
+    this.dust.updateConfig({ angle: facing > 0 ? { min: 190, max: 240 } : { min: 300, max: 350 } });
+    this.dust.explode(n, x, y - 2);
+  }
+
+  // a puff under the feet on take-off
+  private jumpDust(x: number, y: number): void {
+    if (reducedMotion.matches) return;
+    this.dust.updateConfig({ angle: { min: 160, max: 380 } });
+    this.dust.explode(6, x, y - 1);
+  }
+
+  // a ring of dust sideways on landing, bigger after a longer fall
+  private landDust(x: number, y: number, fallSpeed: number): void {
+    if (reducedMotion.matches) return;
+    const n = Math.min(10, 3 + Math.round(fallSpeed / 120));
+    this.dust.updateConfig({ angle: { min: 165, max: 195 } });
+    this.dust.explode(Math.ceil(n / 2), x - 4, y - 2);
+    this.dust.updateConfig({ angle: { min: -15, max: 15 } });
+    this.dust.explode(Math.ceil(n / 2), x + 4, y - 2);
+  }
+
+  private spark(x: number, y: number, colour: number, n: number, angle: { min: number; max: number }): void {
+    if (reducedMotion.matches) return;
+    this.sparks.updateConfig({ angle, tint: colour });
+    this.sparks.explode(n, x, y);
+  }
+
   private puff(x: number, y: number, colour: number): void {
     if (reducedMotion.matches) return;
     for (let i = 0; i < 7; i++) {
@@ -449,8 +554,9 @@ export class LevelScene extends Phaser.Scene {
     return { col: Math.floor(x / CELL), row: Math.floor(y / CELL) };
   }
 
-  private itemAt(col: number, row: number): Item | null {
-    for (const { item } of this.placed.values()) {
+  private itemAt(col: number, row: number, withFixtures = false): Item | null {
+    for (const { item, fixed } of this.placed.values()) {
+      if (fixed && !withFixtures) continue;
       const f = footprint(item);
       if (col >= f.col && col < f.col + f.w && row >= f.row && row < f.row + f.h) return item;
     }
@@ -489,8 +595,12 @@ export class LevelScene extends Phaser.Scene {
       return;
     }
     // nothing chosen: say who made what you point at
-    const item = this.itemAt(cell.col, cell.row);
+    const item = this.itemAt(cell.col, cell.row, true);
     this.game.canvas.style.cursor = item ? "help" : "default";
+    if (item?.id.startsWith("fixture-")) {
+      this.hoverInfo = `${NAMES[item.type]}: part of ${this.course.name}. It cannot be demolished.`;
+      return;
+    }
     this.hoverInfo = item ? `${NAMES[item.type]} placed by ${item.createdBy}${item.createdRound ? ` in round ${item.createdRound}` : " in an earlier game"}.` : "";
   }
 
@@ -505,7 +615,7 @@ export class LevelScene extends Phaser.Scene {
       return;
     }
     if (!sel.choice || !sel.hover) return;
-    const error = placementError(store.snap.items, sel.hover);
+    const error = placementError(this.course, store.snap.items, sel.hover);
     if (error) return bus.say(`Can't place there: ${error}.`, true);
     sel.pinned = { ...sel.hover };
     bus.selectionChanged();
@@ -544,6 +654,13 @@ export class LevelScene extends Phaser.Scene {
           rb.setVelocity(0, 0);
         }
         pv.plank.clear();
+        if (it.hangFrom !== undefined) {
+          // ropes up to its frame or rail, moving with it
+          pv.plank.lineStyle(2, C.woodDeep, 0.9);
+          for (const rx of [rb.x + 12, rb.x + 2 * CELL - 12]) pv.plank.lineBetween(rx, it.hangFrom, rx, rb.y + 4);
+          pv.plank.fillStyle(C.steelDark, 1);
+          pv.plank.fillRoundedRect(rb.x + 4, it.hangFrom - 5, 2 * CELL - 8, 8, 3);
+        }
         drawMovingPlank(pv.plank, rb.x, rb.y);
       }
     }
@@ -609,7 +726,7 @@ export class LevelScene extends Phaser.Scene {
     const p: Proposal | null = sel.pinned ?? sel.hover;
     if (!p) return;
     const f = footprint(p);
-    const valid = placementError(items, p) === null;
+    const valid = placementError(this.course, items, p) === null;
     const pinned = !!sel.pinned;
     const tint = valid ? C.green : C.red;
     g.fillStyle(tint, pinned ? 0.12 : 0.07);
@@ -652,14 +769,24 @@ export class LevelScene extends Phaser.Scene {
       r.facing = b.facing;
       const pose: Pose = Math.abs(b.vy) > 80 ? (b.vy < 0 ? "jump" : "fall") : Math.abs(b.vx) > 30 ? "run" : "stand";
       r.figure.clear();
-      drawFigure(r.figure, r.colour, r.facing, this.phase === "RUN" ? pose : "stand", time);
+      drawCharacter(r.figure, r.character, r.facing, this.phase === "RUN" ? pose : "stand", time);
+      // their dust too: running, and landing after a fall
+      if (this.phase === "RUN") {
+        const feetX = r.view.x, feetY = r.view.y;
+        if (pose === "run" && time - r.lastDustAt > 140) {
+          r.lastDustAt = time;
+          this.kickDust(feetX - r.facing * 8, feetY, 1, r.facing);
+        }
+        if (r.lastVy > 250 && Math.abs(b.vy) < 40) this.landDust(feetX, feetY, r.lastVy);
+        r.lastVy = b.vy;
+      }
     }
   }
 
   private redrawLocal(pose: Pose, time: number): void {
     const l = this.local!;
     l.figure.clear();
-    drawFigure(l.figure, l.colour, l.facing, pose, time);
+    drawCharacter(l.figure, l.character, l.facing, pose, time);
   }
 
   // ---------- my own movement ----------
@@ -690,25 +817,47 @@ export class LevelScene extends Phaser.Scene {
 
     // walls: remember the last touch so a jump just after leaving still counts
     const wallSide: Side | 0 = !onGround && b.blocked.left ? -1 : !onGround && b.blocked.right ? 1 : 0;
+    const feetX = l.rect.x, feetY = l.rect.y + 14;
     if (wallSide) {
       l.lastWallTouchAt = now;
       l.lastWallSide = wallSide;
-      if (dir === wallSide && b.velocity.y > MOVEMENT.wallSlideSpeed) b.setVelocityY(MOVEMENT.wallSlideSpeed);
+      if (dir === wallSide && b.velocity.y > MOVEMENT.wallSlideSpeed) {
+        b.setVelocityY(MOVEMENT.wallSlideSpeed);
+        // scraping down the wall
+        if (now - l.lastDustAt > 90) {
+          l.lastDustAt = now;
+          this.dust.updateConfig({ angle: { min: 250, max: 290 } });
+          if (!reducedMotion.matches) this.dust.explode(1, feetX + wallSide * 10, feetY - 20);
+        }
+      }
     }
 
     if (jump) {
-      if (onGround) b.setVelocityY(-MOVEMENT.jumpVelocity);
-      else if (canWallJump(now, wallSide !== 0, l.lastWallTouchAt)) {
+      if (onGround) {
+        b.setVelocityY(-MOVEMENT.jumpVelocity);
+        this.jumpDust(feetX, feetY);
+      } else if (canWallJump(now, wallSide !== 0, l.lastWallTouchAt)) {
         const v = wallJumpVelocity(l.lastWallSide, dir === l.lastWallSide);
         b.setVelocity(v.vx, v.vy);
+        // a kick off the wall
+        this.spark(feetX + l.lastWallSide * 10, feetY - 14, C.woodLight, 6, l.lastWallSide > 0 ? { min: 120, max: 240 } : { min: -60, max: 60 });
         l.lastWallTouchAt = null;
       }
     }
 
-    // a little squash on landing
-    if (onGround && !l.wasOnGround && !reducedMotion.matches) {
-      l.view.setScale(1.12, 0.88);
-      this.tweens.add({ targets: l.view, scaleX: 1, scaleY: 1, duration: 140, ease: "Quad.out" });
+    // landing: a squash and some dust; running: a little dust behind
+    if (!onGround) l.fallSpeed = Math.max(l.fallSpeed, b.velocity.y);
+    if (onGround && !l.wasOnGround) {
+      if (l.fallSpeed > 150) this.landDust(feetX, feetY, l.fallSpeed);
+      if (!reducedMotion.matches) {
+        l.view.setScale(1.12, 0.88);
+        this.tweens.add({ targets: l.view, scaleX: 1, scaleY: 1, duration: 140, ease: "Quad.out" });
+      }
+      l.fallSpeed = 0;
+    }
+    if (onGround && Math.abs(b.velocity.x) > 120 && now - l.lastDustAt > 110) {
+      l.lastDustAt = now;
+      this.kickDust(feetX - Math.sign(b.velocity.x) * 8, feetY, 1, b.velocity.x > 0 ? 1 : -1);
     }
     l.wasOnGround = onGround;
 

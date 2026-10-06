@@ -9,7 +9,7 @@ placeables. Keep the pool small.
 | Spring | change velocity | contact with its active face sets `velocity.y = springLaunchVelocity`, optionally keeping some horizontal speed | position; orientation later. One consistent, readable bounce, no power slider at first |
 | Spike | lethal area | overlap: RUNNING → DEAD. Always visually obvious, no gore | position |
 | Fan | continuous push | a 1×1 fan blowing along one of four directions; inside its 4-cell zone a player is accelerated that way. Only the fan itself occupies space; the zone may cross anything | position; R turns the direction |
-| Moving Platform | timing | a 2-cell plank sliding back and forth along a track (5×1 horizontal, 2×4 vertical) on a fixed 3 s cycle from the start of the run; the whole track is its footprint | position; R switches axis |
+| Moving Platform | timing | a 2-cell plank sliding back and forth along a track (5×1 horizontal, 2×4 vertical) on a fixed 6 s cycle from the start of the run; the whole track is its footprint | position; R switches axis |
 | Demolition Bomb | remove one earlier object | BUILD-phase action, see below; never stays in the level | target |
 
 ## Demolition Bomb
@@ -58,3 +58,10 @@ Once committed, an item belongs to the level, not its creator. Nobody can move
 it in a later round. Later interaction is only through new placements,
 demolition, or a mechanic designed for it. This keeps each build choice
 consequential.
+
+## Course fixtures
+
+A course may come with its own pieces (a fan on The Tower, a swing on The
+Swing). They use the same item types and behaviour, but belong to the level
+definition, not to anyone: they cannot be demolished, cannot be built over,
+and a death on one credits nobody.

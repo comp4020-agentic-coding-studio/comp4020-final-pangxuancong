@@ -234,62 +234,230 @@ export function drawTravel(g: G, rot: number, ox: number, oy: number, colour: nu
   }
 }
 
+// Course pieces by style. Shelves and pegs are planks on brackets: only their
+// top 20 px is solid (blockBody in scene.ts), so that is all that is drawn.
+export function drawCourseBlock(g: G, style: string, x: number, y: number, w: number, h: number): void {
+  switch (style) {
+    case "floor": {
+      // a long tabletop running under the whole course, on legs
+      g.fillStyle(C.ink, 0.1);
+      g.fillRect(x, y + 4, w, h);
+      plank(g, x, y, w, 18, C.wood);
+      g.fillStyle(C.woodDark, 1);
+      for (let lx = x + 60; lx < x + w; lx += 300) g.fillRect(lx, y + 18, 12, h - 18);
+      g.lineStyle(1, C.woodDeep, 0.35);
+      for (let sx = x + 150; sx < x + w; sx += 150) g.lineBetween(sx, y + 2, sx, y + 16);
+      return;
+    }
+    case "shelf": {
+      shadow(g, x, y, w, 20, 3);
+      plank(g, x, y, w, 20);
+      bolt(g, x + 7, y + 10);
+      bolt(g, x + w - 7, y + 10);
+      // brackets underneath, inside the cell
+      if (w >= 2 * CELL) {
+        bracketDown(g, x + 10, y + 20);
+        bracketDown(g, x + w - 18, y + 20);
+      } else bracketDown(g, x + w / 2 - 4, y + 20);
+      return;
+    }
+    case "peg": {
+      shadow(g, x + 2, y, w - 4, 16, 3);
+      plank(g, x + 2, y, w - 4, 16);
+      bracketDown(g, x + w / 2 - 4, y + 16);
+      return;
+    }
+    case "post": {
+      shadow(g, x, y, w, h, 2);
+      g.fillStyle(C.steel, 1);
+      g.fillRect(x + 6, y, w - 12, h);
+      g.fillStyle(C.steelLight, 0.6);
+      g.fillRect(x + 9, y + 2, 4, h - 4);
+      g.fillStyle(C.steelDark, 1);
+      g.fillRect(x + w - 12, y + 2, 3, h - 4);
+      for (let by = y + 14; by < y + h - 6; by += 40) bolt(g, x + w / 2, by);
+      return;
+    }
+    default:
+      drawBlock(g, x, y, w, h);
+  }
+}
+
+const bracketDown = (g: G, x: number, y: number): void => {
+  g.fillStyle(C.woodDark, 1);
+  g.fillRect(x, y, 8, 12);
+  g.fillTriangle(x, y, x + 8, y, x, y + 14);
+  g.fillStyle(C.steel, 1);
+  g.fillRect(x + 1, y + 1, 6, 3);
+};
+
 export type Pose = "stand" | "run" | "jump" | "fall" | "wall";
 
-// A small jointed figure, feet at (0, 0), about 30 px tall. `t` drives the
-// running cycle.
-export function drawFigure(g: G, colour: number, facing: -1 | 1, pose: Pose = "stand", t = 0): void {
-  const dark = shade(colour, 0.72);
-  g.fillStyle(C.ink, 0.13);
-  g.fillEllipse(0, 1, 20, 4);
-  const swing = pose === "run" ? Math.sin(t * 0.018) : 0;
-  const hipY = -12;
-  const shoulderY = -22;
-  // legs
-  const leg = (dir: number, colourLeg: number): void => {
-    let fx = 0, kneeX = 0, fy = 0;
-    if (pose === "run") { fx = dir * swing * 8; kneeX = fx * 0.4 + facing * 2; }
-    else if (pose === "jump") { fx = dir * 4 + facing * 2; kneeX = facing * 4; fy = -3; }
-    else if (pose === "fall") { fx = dir * 6; kneeX = dir * 3; }
-    else if (pose === "wall") { fx = -facing * 3 + dir * 2; kneeX = -facing * 1; fy = dir > 0 ? -4 : 0; }
-    else { fx = dir * 3.5; kneeX = dir * 2; }
-    g.lineStyle(4.5, colourLeg, 1);
-    g.beginPath();
-    g.moveTo(dir * 2, hipY);
-    g.lineTo(kneeX + dir * 1.5, hipY + 6 + fy / 2);
-    g.lineTo(fx, fy - 1);
-    g.strokePath();
-  };
-  leg(-1, dark);
-  // body
-  g.lineStyle(7, colour, 1);
-  g.lineBetween(0, hipY, facing * 1, shoulderY);
-  leg(1, colour);
-  // arms
-  const arm = (dir: number, c: number): void => {
-    let hx = 0, hy = 0;
-    if (pose === "run") { hx = -dir * swing * 7 + facing * 2; hy = shoulderY + 9; }
-    else if (pose === "jump") { hx = dir * 6 + facing * 3; hy = shoulderY - 8; }
-    else if (pose === "fall") { hx = dir * 9; hy = shoulderY - 4; }
-    else if (pose === "wall") { hx = -facing * 8; hy = shoulderY - 6 + dir * 3; }
-    else { hx = dir * 4; hy = shoulderY + 10; }
-    g.lineStyle(4, c, 1);
-    g.lineBetween(facing * 1 + dir, shoulderY + 1, hx, hy);
-  };
-  arm(-1, dark);
-  arm(1, colour);
-  // head, looking where it goes
-  g.fillStyle(colour, 1);
-  g.fillCircle(facing * 1.5, -29, 6);
-  g.fillStyle(0xffffff, 0.3);
-  g.fillCircle(facing * 1.5 - 2, -31, 2);
-  g.fillStyle(C.ink, 0.85);
-  g.fillCircle(facing * 4, -29.5, 1.2);
+const outline = (g: G): void => {
+  g.lineStyle(1.8, C.ink, 1);
+};
+
+// The four characters (src/shared/characters.ts), feet at (0, 0), about 40 px
+// tall, with a dark outline like the human's reference drawings. `t` drives
+// the run cycle; poses tilt, tuck and stretch them.
+export function drawCharacter(g: G, character: number, facing: -1 | 1, pose: Pose = "stand", t = 0): void {
+  const f = facing;
+  const cycle = pose === "run" ? Math.sin(t * 0.02) : 0;
+  const hop = pose === "run" ? Math.abs(Math.sin(t * 0.02)) * 2 : 0;
+  g.fillStyle(C.ink, 0.14);
+  g.fillEllipse(0, 1, 24, 5);
+  switch (character) {
+    case 0: { // Chicken: tall white egg, red comb, orange beak and feet
+      const lift = pose === "jump" ? -3 : 0;
+      for (const side of [-1, 1]) {
+        const fx = side * 4 + cycle * side * 4;
+        g.lineStyle(2.4, 0xe9a23b, 1);
+        g.lineBetween(side * 3, -9 + lift, fx, -1 + lift);
+        g.lineBetween(fx, -1 + lift, fx + f * 4, -1 + lift);
+      }
+      const y = -hop + lift;
+      g.fillStyle(0xfbf8f2, 1);
+      g.fillRoundedRect(-10, -38 + y, 20, 30, 10);
+      outline(g);
+      g.strokeRoundedRect(-10, -38 + y, 20, 30, 10);
+      // a wing on the far side, raised when airborne
+      const wingUp = pose === "jump" || pose === "fall" ? -7 : 0;
+      g.fillStyle(0xe8e2d8, 1);
+      g.fillEllipse(-f * 8, -20 + y + wingUp, 10, 12);
+      g.strokeEllipse(-f * 8, -20 + y + wingUp, 10, 12);
+      g.fillStyle(0xd8402f, 1);
+      g.fillEllipse(f * 1, -40 + y, 9, 10);
+      g.strokeEllipse(f * 1, -40 + y, 9, 10);
+      g.fillStyle(0xf0a63a, 1);
+      g.fillTriangle(f * 7, -31 + y, f * 7, -25 + y, f * 15, -28 + y);
+      g.lineStyle(1.4, C.ink, 1);
+      g.strokeTriangle(f * 7, -31 + y, f * 7, -25 + y, f * 15, -28 + y);
+      g.fillStyle(C.ink, 1);
+      g.fillCircle(f * 4, -32 + y, 1.6);
+      return;
+    }
+    case 1: { // Big Dog: a golden dog on four short legs, floppy ears, wagging tail
+      const y = -hop;
+      g.lineStyle(4, 0xa8742f, 1);
+      for (const [lx, ph] of [[-8, 0], [-3, Math.PI], [4, Math.PI], [9, 0]] as const) {
+        const swing = pose === "run" ? Math.sin(t * 0.02 + ph) * 3 : pose === "jump" ? -2 : 0;
+        g.lineBetween(lx * f, -10 + y, lx * f + swing, -1);
+      }
+      const wag = Math.sin(t * 0.03) * 4;
+      g.lineStyle(3, 0xc28a3c, 1);
+      g.lineBetween(-f * 13, -18 + y, -f * 18, -26 + y + wag * 0.4);
+      g.fillStyle(0xd9a25a, 1);
+      g.fillEllipse(0, -16 + y, 30, 15);
+      outline(g);
+      g.strokeEllipse(0, -16 + y, 30, 15);
+      g.fillStyle(0xf3d9b0, 1);
+      g.fillEllipse(f * 2, -12 + y, 14, 6);
+      // head, snout, nose, ear
+      g.fillStyle(0xd9a25a, 1);
+      g.fillCircle(f * 12, -27 + y, 9);
+      outline(g);
+      g.strokeCircle(f * 12, -27 + y, 9);
+      g.fillStyle(0xf3d9b0, 1);
+      g.fillEllipse(f * 19, -24 + y, 10, 7);
+      g.strokeEllipse(f * 19, -24 + y, 10, 7);
+      g.fillStyle(C.ink, 1);
+      g.fillCircle(f * 23, -25 + y, 2);
+      g.fillCircle(f * 14, -29 + y, 1.6);
+      g.fillStyle(0x9b6a2a, 1);
+      const earFlap = pose === "jump" ? -4 : pose === "fall" ? -6 : 0;
+      g.fillEllipse(f * 7, -25 + y + earFlap * 0.5, 7, 13);
+      g.strokeEllipse(f * 7, -25 + y + earFlap * 0.5, 7, 13);
+      return;
+    }
+    case 2: { // Pot Horse: a green horse peeking out of a clay pot that hops along
+      const bob = pose === "run" ? -Math.abs(Math.sin(t * 0.02)) * 5 : pose === "jump" ? -2 : 0;
+      const tilt = pose === "run" ? Math.sin(t * 0.02) * 1.5 : 0;
+      const y = bob;
+      // the horse first, so the pot's rim covers its base
+      g.fillStyle(0x86c932, 1);
+      g.fillRoundedRect(-7 + tilt, -38 + y, 12, 22, 5);
+      outline(g);
+      g.strokeRoundedRect(-7 + tilt, -38 + y, 12, 22, 5);
+      g.fillStyle(0x86c932, 1);
+      g.fillRoundedRect(f > 0 ? -2 + tilt : -16 + tilt, -40 + y, 18, 11, 5);
+      g.strokeRoundedRect(f > 0 ? -2 + tilt : -16 + tilt, -40 + y, 18, 11, 5);
+      g.fillStyle(0x5e9a1c, 1);
+      g.fillTriangle(-f * 3 + tilt, -38 + y, -f * 1 + tilt, -45 + y, f * 2 + tilt, -38 + y);
+      g.fillStyle(C.ink, 1);
+      g.fillEllipse(-f * 1 + tilt, -45 + y, 6, 4); // the black tuft
+      g.fillCircle(f * 3 + tilt, -36 + y, 1.8);
+      g.fillStyle(0x4e8a15, 1);
+      g.fillCircle(f * 13 + tilt, -34 + y, 1.3);
+      // the pot
+      g.fillStyle(0xb76a36, 1);
+      g.fillRoundedRect(-15, -20 + y, 30, 20, { tl: 3, tr: 3, bl: 13, br: 13 });
+      outline(g);
+      g.strokeRoundedRect(-15, -20 + y, 30, 20, { tl: 3, tr: 3, bl: 13, br: 13 });
+      g.fillStyle(0xd8894d, 1);
+      g.fillEllipse(0, -20 + y, 30, 6);
+      g.strokeEllipse(0, -20 + y, 30, 6);
+      g.fillStyle(0x5a3018, 1);
+      g.fillEllipse(0, -20 + y, 22, 3);
+      // two black hooves on the rim
+      g.fillStyle(C.ink, 1);
+      g.fillEllipse(-4 + f * 2, -21 + y, 6, 4);
+      g.fillEllipse(6 + f * 2, -21 + y, 6, 4);
+      // the little green-and-white code on the pot
+      g.fillStyle(0xfbf6ea, 1);
+      g.fillRect(-4, -12 + y, 8, 8);
+      g.fillStyle(0x2f9a3a, 1);
+      g.fillRect(-3, -11 + y, 2, 2);
+      g.fillRect(1, -11 + y, 2, 2);
+      g.fillRect(-1, -9 + y, 2, 2);
+      g.fillRect(-3, -7 + y, 2, 2);
+      g.fillRect(1, -7 + y, 2, 2);
+      return;
+    }
+    default: { // Dabai: a round white protective suit with blue stripes and a blue mask
+      const y = -hop;
+      for (const side of [-1, 1]) {
+        const step = pose === "run" ? cycle * side * 4 : 0;
+        g.fillStyle(0xfbfbfa, 1);
+        g.fillRoundedRect(side * 6 - 4 + step, -9 + y, 8, 9 - y, 3);
+        outline(g);
+        g.strokeRoundedRect(side * 6 - 4 + step, -9 + y, 8, 9 - y, 3);
+        g.fillStyle(0x2f86d9, 1);
+        g.fillRect(side * 6 - 4 + step, -4, 8, 2);
+      }
+      g.fillStyle(0xfbfbfa, 1);
+      g.fillRoundedRect(-12, -27 + y, 24, 20, 9);
+      outline(g);
+      g.strokeRoundedRect(-12, -27 + y, 24, 20, 9);
+      g.fillStyle(0x2f86d9, 1);
+      g.fillRect(-1, -27 + y, 2.5, 20);
+      g.fillRect(-12, -17 + y, 24, 2.5);
+      // stubby arms, up when airborne
+      const armUp = pose === "jump" || pose === "fall" ? -8 : 0;
+      g.fillStyle(0xfbfbfa, 1);
+      for (const side of [-1, 1]) {
+        g.fillEllipse(side * 13, -18 + y + armUp, 7, 10);
+        outline(g);
+        g.strokeEllipse(side * 13, -18 + y + armUp, 7, 10);
+      }
+      // the hood, its face window and mask
+      g.fillStyle(0xfbfbfa, 1);
+      g.fillCircle(-f * 1, -34 + y, 11);
+      outline(g);
+      g.strokeCircle(-f * 1, -34 + y, 11);
+      g.lineStyle(2, 0x2f86d9, 1);
+      g.lineBetween(-f * 1, -45 + y, -f * 1, -40 + y);
+      g.fillStyle(0xf3e1c8, 1);
+      g.fillEllipse(f * 4, -34 + y, 13, 11);
+      g.lineStyle(1.6, 0x2f86d9, 1);
+      g.strokeEllipse(f * 4, -34 + y, 13, 11);
+      g.fillStyle(0x8cc4ef, 1);
+      g.fillRoundedRect(f * 4 - 6, -33 + y, 12, 6, 2);
+      g.fillStyle(C.ink, 1);
+      g.fillCircle(f * 4 - 2.5, -36 + y, 1.3);
+      g.fillCircle(f * 4 + 2.5, -36 + y, 1.3);
+      return;
+    }
+  }
 }
 
 export const hex = (css: string): number => Number.parseInt(css.replace("#", ""), 16);
-
-function shade(c: number, k: number): number {
-  const r = Math.round(((c >> 16) & 255) * k), gr = Math.round(((c >> 8) & 255) * k), b = Math.round((c & 255) * k);
-  return (r << 16) | (gr << 8) | b;
-}

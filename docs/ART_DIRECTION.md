@@ -41,9 +41,13 @@ green, blue). No gradients, glows or neon.
 
 ## Players
 
-Small jointed figures (round head, limbs) in the player's colour, posed for
-standing, running, jumping and wall sliding, told apart by colour and a name
-label. No large avatars or profile cards. Readable when several share a spot;
+Four characters, one per seat, drawn as flat vector shapes with ink outlines
+(`src/shared/characters.ts`, `drawCharacter` in `src/client/draw.ts`):
+Chicken (white, red comb), Big Dog (tan, floppy ears), Pot Horse (a green
+horse in a clay pot) and Dabai (white protective suit, blue stripes, blue
+mask). Each has standing, running, jumping and falling poses and a name
+label; the round panel uses a small matching head. A player keeps their
+character between games. Spectators have none. No large avatars or profile cards. Readable when several share a spot;
 overlap is fine since players pass through each other.
 
 ## Composition
@@ -63,6 +67,14 @@ invalid one restrained warning feedback; protected START/GOAL areas appear
 only while relevant. No permanent editor grid.
 
 ## Death and goal
+
+Movement particles: small paper-coloured dust kicked up while running, a
+puff on take-off and a wider one on landing, sparks on a wall scrape or wall
+kick and on a spring. Remote players get run and landing dust too. Particles
+are decoration only and never carry information.
+
+Final scores: rows reveal from last place to first, each bar growing and its
+number counting up; the winner's row lights last, then the vote appears.
 
 Death: a small dust puff, quick squash or fade, optionally a tiny trace mark.
 Readable, light, no gore. The flag is obvious without dominating; reaching it

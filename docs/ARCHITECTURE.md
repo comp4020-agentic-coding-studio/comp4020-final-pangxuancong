@@ -19,7 +19,9 @@ Server (src/server, TypeScript run directly by Node)
 ├── game.ts: round clock (200 ms tick), roster, item validation, sockets
 └── db.ts: the only code that touches SQLite
 Shared (src/shared, imported by both and by spec/)
-├── level.ts: grid, base course, START/GOAL zones, placement + demolition rules
+├── level.ts: grid, items, placement + demolition rules
+├── levels.ts: the three fixed courses (blocks, fixtures, START/GOAL)
+├── characters.ts: the four seat characters
 ├── rounds.ts: the round state machine (seats, timeouts, vote), pure
 ├── score.ts: points from score events, and who a spike death credits
 ├── movement.ts: movement constants and the wall-jump rule
@@ -82,7 +84,7 @@ server does not simulate player physics.
 Persistent (SQLite):
 
 ```sql
-level(id, round, parent_id, outcome, finished_at, created_at, updated_at)
+level(id, round, layout, parent_id, outcome, finished_at, created_at, updated_at)
 placed_item(id, level_id, type, col, row, rot, created_by, created_by_id,
             created_round, created_at, destroyed_by, destroyed_round, destroyed_at)
 score_event(level_id, round, player_id, name, kind, created_at)
@@ -90,7 +92,8 @@ score_event(level_id, round, player_id, name, kind, created_at)
 
 One level row is one game of six rounds. Archiving finishes it with
 `outcome = 'archived'` and starts a new row with `parent_id` pointing at it
-and a copy of its surviving items; restarting starts a bare row. Scores are
+and a copy of its surviving items; restarting starts a bare row on the course chosen in SELECT. `layout` is
+the course number (1–3); an archived copy keeps its parent's. Scores are
 tallied from `score_event` (`src/shared/score.ts`), so they survive a restart
 mid-game and belong to that game only.
 

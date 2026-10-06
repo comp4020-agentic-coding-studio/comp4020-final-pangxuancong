@@ -1,52 +1,46 @@
 import { randomUUID } from "node:crypto";
 import type { Server, Socket } from "socket.io";
+import { CHARACTERS, SPECTATOR } from "../shared/characters.ts";
 import { type Item, demolitionError, placementError } from "../shared/level.ts";
+import { levelById } from "../shared/levels.ts";
 import type { ClientToServer, Handshake, PlayerView, ServerToClient, Snapshot } from "../shared/protocol.ts";
 import {
-  BUILD_IDLE_MS, BUILD_MAX_MS, MAX_PLAYERS, MAX_ROUNDS, type RoundState,
-  act, canBuild, join, leave, moved, newRoundState, report, tick, touchBuild, vote,
+  BUILD_IDLE_MS, BUILD_MAX_MS, MAX_PLAYERS, MAX_ROUNDS, type Player, type RoundState,
+  act, canBuild, join, leave, moved, newRoundState, pick, report, tick, touchBuild, vote,
 } from "../shared/rounds.ts";
 import { type ScoreEvent, killCredit, tally } from "../shared/score.ts";
 import {
-  currentLevel, destroyItem, finishLevel, insertItem, insertScoreEvent, readItems, readScoreEvents, setRound, startLevel,
+  type LevelRow, currentLevel, destroyItem, finishLevel, insertItem, insertScoreEvent, readItems, readScoreEvents, setRound, startLevel,
 } from "./db.ts";
 
 // The server's half of the game: the round state machine on a clock, the level
-// in SQLite, and the sockets. It owns phase, roster, build actions, statuses
-// and items. It does not simulate anyone's movement (docs/ARCHITECTURE.md).
+// in SQLite, and the sockets. It owns phase, roster, characters, build
+// actions, statuses, items and scores. It does not simulate anyone's movement
+// (docs/ARCHITECTURE.md).
 
 type GameSocket = Socket<ClientToServer, ServerToClient>;
 
 const TICK_MS = 200;
 // only show the auto-skip deadline once it is this close
 const SHOW_DEADLINE_MS = 15_000;
-const COLOURS = ["#c0654f", "#5f87b0", "#d1a13f", "#6f9461", "#9a6fa8", "#4f9a99", "#c27a9a", "#8a7a52"];
-const ANIMALS = ["Fox", "Moth", "Crow", "Hare", "Wren", "Newt", "Otter", "Finch", "Mole", "Heron"];
-const ADJECTIVES = ["Quiet", "Blue", "Paper", "Small", "Brave", "Amber", "Swift", "Mossy", "Sleepy", "Bright"];
 
-export function createGame(io: Server<ClientToServer, ServerToClient>): { levelState: () => { levelId: number; round: number; items: Item[] } } {
-  let level = currentLevel();
-  let items = readItems(level.id);
-  let scoreEvents: ScoreEvent[] = readScoreEvents(level.id);
-  // after a restart the level reloads and the session safely returns to BUILD
-  const state: RoundState = newRoundState(level.round, Date.now());
+const nameOf = (p: Player): string => (p.character === null ? SPECTATOR.name : CHARACTERS[p.character].name);
+const colourOf = (p: Player | undefined): string => (p?.character == null ? SPECTATOR.colour : CHARACTERS[p.character].colour);
+
+export function createGame(io: Server<ClientToServer, ServerToClient>): { levelState: () => { levelId: number; layout: number; round: number; items: Item[] } } {
+  // a game in progress resumes in BUILD; with none, players choose a level
+  let level: LevelRow | null = currentLevel();
+  let items = level ? readItems(level.id) : [];
+  let scoreEvents: ScoreEvent[] = level ? readScoreEvents(level.id) : [];
+  const state: RoundState = newRoundState(level?.round ?? 1, Date.now(), level ? "BUILD" : "SELECT");
   let levelDone = false;
   let traces: { x: number; y: number }[] = [];
   let nextTraces: { x: number; y: number }[] = [];
-  const colours = new Map<string, string>();
-
-  const colourOf = (id: string): string => {
-    let c = colours.get(id);
-    if (!c) {
-      const used = new Set(state.players.map((p) => colours.get(p.id)));
-      c = COLOURS.find((x) => !used.has(x)) ?? COLOURS[colours.size % COLOURS.length];
-      colours.set(id, c);
-    }
-    return c;
-  };
+  // characters of people who have left, for the final table
+  const pastCharacters = new Map<string, number>();
 
   // ms until this player is auto-skipped, once that is close enough to show
-  const snapshotDeadline = (p: RoundState["players"][number], now: number): number | null => {
+  const snapshotDeadline = (p: Player, now: number): number | null => {
     if (state.phase !== "BUILD" || !p.active || p.build !== "WAITING") return null;
     const left = Math.min(BUILD_IDLE_MS - (now - p.lastActivityAt), BUILD_MAX_MS - (now - state.phaseStartedAt));
     return left <= SHOW_DEADLINE_MS ? Math.max(0, left) : null;
@@ -56,8 +50,10 @@ export function createGame(io: Server<ClientToServer, ServerToClient>): { levelS
     const me = state.players.find((p) => p.id === playerId);
     const totals = tally(scoreEvents);
     const thisRound = tally(scoreEvents, state.round);
+    const characterOf = (id: string): number | null => state.players.find((p) => p.id === id)?.character ?? pastCharacters.get(id) ?? null;
     return {
-      levelId: level.id,
+      levelId: level?.id ?? 0,
+      layout: level?.layout ?? 1,
       round: state.round,
       maxRounds: MAX_ROUNDS,
       phase: state.phase,
@@ -68,19 +64,22 @@ export function createGame(io: Server<ClientToServer, ServerToClient>): { levelS
       maxPlayers: MAX_PLAYERS,
       players: state.players.map(
         (p): PlayerView => ({
-          id: p.id, name: p.name, colour: colourOf(p.id), connected: p.connected, active: p.active, build: p.build, run: p.run,
-          points: totals.get(p.id)?.points ?? 0, gained: thisRound.get(p.id)?.points ?? 0, vote: p.vote,
+          id: p.id, name: nameOf(p), colour: colourOf(p), connected: p.connected, active: p.active, build: p.build, run: p.run,
+          points: totals.get(p.id)?.points ?? 0, gained: thisRound.get(p.id)?.points ?? 0, vote: p.vote, pick: p.pick, character: p.character,
         }),
       ),
       // everyone who scored, plus everyone playing now, even on zero
       scores: [
         ...totals.values(),
-        ...state.players.filter((p) => p.active && !totals.has(p.id)).map((p) => ({ playerId: p.id, name: p.name, points: 0, finishes: 0, kills: 0 })),
+        ...state.players.filter((p) => p.active && !totals.has(p.id)).map((p) => ({ playerId: p.id, name: nameOf(p), points: 0, finishes: 0, kills: 0 })),
       ]
-        .map((t) => ({ ...t, colour: colourOf(t.playerId) }))
+        .map((t) => {
+          const character = characterOf(t.playerId);
+          return { ...t, character, colour: character === null ? SPECTATOR.colour : CHARACTERS[character].colour };
+        })
         .sort((a, b) => b.points - a.points || a.name.localeCompare(b.name)),
-      archivedFrom: level.parentId,
-      items,
+      archivedFrom: level?.parentId ?? null,
+      items: level ? items : [],
       traces: state.phase === "BUILD" ? traces : [],
     };
   };
@@ -93,7 +92,7 @@ export function createGame(io: Server<ClientToServer, ServerToClient>): { levelS
 
   // Timeouts can change build or run states inside tick() without a phase
   // transition, so compare what a snapshot would show before and after.
-  const signature = (): string => JSON.stringify(state.players.map((p) => [p.id, p.build, p.run, p.connected, p.active, p.vote]));
+  const signature = (): string => JSON.stringify(state.players.map((p) => [p.id, p.build, p.run, p.connected, p.active, p.vote, p.pick, p.character]));
   let lastDeadlineBroadcast = 0;
   setInterval(() => {
     const now = Date.now();
@@ -104,21 +103,33 @@ export function createGame(io: Server<ClientToServer, ServerToClient>): { levelS
       traces = nextTraces;
       nextTraces = [];
     }
+    if (t?.to === "SELECT" && level) {
+      finishLevel(level.id, "restarted");
+      level = null;
+      items = [];
+      scoreEvents = [];
+      traces = [];
+    }
     if (t?.to === "BUILD") {
       if (t.newLevel) {
-        // archive: keep building on a copy of this level; restart: bare
-        finishLevel(level.id, t.archive ? "archived" : "restarted");
-        level = startLevel(t.archive ? level.id : null);
+        // archive: keep building on a copy of this level; otherwise the chosen course, bare
+        if (t.archive && level) {
+          finishLevel(level.id, "archived");
+          level = startLevel(level, level.layout);
+        } else {
+          level = startLevel(null, t.archive ? 1 : t.layout);
+        }
         items = readItems(level.id);
         scoreEvents = [];
         traces = [];
-      } else {
+      } else if (level) {
         setRound(level.id, state.round);
       }
       levelDone = false;
     }
-    // the near-deadline warning is refreshed once a second
-    const nearDeadline = now - lastDeadlineBroadcast >= 1000 && state.players.some((p) => snapshotDeadline(p, now) !== null);
+    // the near-deadline warning, and the select countdown, refresh once a second
+    const counting = state.phase === "SELECT" && state.phaseEndsAt !== null;
+    const nearDeadline = now - lastDeadlineBroadcast >= 1000 && (counting || state.players.some((p) => snapshotDeadline(p, now) !== null));
     if (t || nearDeadline || signature() !== before) {
       if (nearDeadline) lastDeadlineBroadcast = now;
       broadcast();
@@ -126,14 +137,19 @@ export function createGame(io: Server<ClientToServer, ServerToClient>): { levelS
   }, TICK_MS);
 
   io.on("connection", (socket: GameSocket) => {
-    const { playerId, name } = (socket.handshake.auth ?? {}) as Partial<Handshake>;
+    const { playerId } = (socket.handshake.auth ?? {}) as Partial<Handshake>;
     const id = typeof playerId === "string" && playerId.length >= 8 && playerId.length <= 64 ? playerId : randomUUID();
-    const display = typeof name === "string" && name.trim() ? name.trim().slice(0, 24) : `${pick(ADJECTIVES)} ${pick(ANIMALS)}`;
     // one live socket per player: a second connection with the same id takes over
     socket.data.playerId = id;
     for (const [, other] of io.of("/").sockets) if (other !== socket && other.data.playerId === id) other.disconnect(true);
-    join(state, id, display, Date.now());
+    join(state, id, SPECTATOR.name, Date.now());
     broadcast();
+    const me = (): Player | undefined => state.players.find((p) => p.id === id);
+    const course = () => levelById(level?.layout);
+
+    socket.on("level:pick", (n) => {
+      if (pick(state, id, n, Date.now())) broadcast();
+    });
 
     socket.on("build:preview", (p) => {
       if (!canBuild(state, id)) return;
@@ -144,12 +160,12 @@ export function createGame(io: Server<ClientToServer, ServerToClient>): { levelS
 
     socket.on("build:commit", (proposal, ack) => {
       if (typeof ack !== "function") return;
-      if (!canBuild(state, id)) return ack({ ok: false, error: "you have already built this round" });
-      const error = placementError(items, proposal);
+      if (!canBuild(state, id) || !level) return ack({ ok: false, error: "you have already built this round" });
+      const error = placementError(course(), items, proposal);
       if (error) return ack({ ok: false, error });
       const item: Item = {
         id: randomUUID(), type: proposal.type, col: proposal.col, row: proposal.row, rot: proposal.rot,
-        createdBy: display, createdById: id, createdRound: state.round,
+        createdBy: nameOf(me()!), createdById: id, createdRound: state.round,
       };
       insertItem(level.id, item);
       items = [...items, item];
@@ -164,7 +180,7 @@ export function createGame(io: Server<ClientToServer, ServerToClient>): { levelS
       if (!canBuild(state, id)) return ack({ ok: false, error: "you have already built this round" });
       const error = demolitionError(items, targetId);
       if (error) return ack({ ok: false, error });
-      destroyItem(targetId, display, state.round);
+      destroyItem(targetId, nameOf(me()!), state.round);
       items = items.filter((i) => i.id !== targetId);
       act(state, id, "PLACED");
       socket.broadcast.emit("build:preview", { playerId: id, cleared: true });
@@ -191,13 +207,15 @@ export function createGame(io: Server<ClientToServer, ServerToClient>): { levelS
     });
 
     socket.on("run:result", (p) => {
-      if (!p || (p.result !== "DEAD" && p.result !== "FINISHED")) return;
+      if (!p || (p.result !== "DEAD" && p.result !== "FINISHED") || !level) return;
       if (!report(state, id, p.result)) return;
       if (p.result === "DEAD" && Number.isFinite(p.x) && Number.isFinite(p.y)) nextTraces.push({ x: Math.round(p.x), y: Math.round(p.y) });
       // +1 for the flag; +0.2 to whoever placed the spike that killed someone else
+      // (the level's own spikes are not in `items`, so they credit nobody)
       const scorer = p.result === "FINISHED" ? id : killCredit(id, items.find((i) => i.id === p.by));
       if (scorer) {
-        const name = state.players.find((q) => q.id === scorer)?.name ?? items.find((i) => i.createdById === scorer)?.createdBy ?? "someone";
+        const who = state.players.find((q) => q.id === scorer);
+        const name = who ? nameOf(who) : (items.find((i) => i.createdById === scorer)?.createdBy ?? "someone");
         const e: ScoreEvent = { round: state.round, playerId: scorer, name, kind: p.result === "FINISHED" ? "finish" : "kill" };
         scoreEvents.push(e);
         insertScoreEvent(level.id, e);
@@ -212,16 +230,16 @@ export function createGame(io: Server<ClientToServer, ServerToClient>): { levelS
     socket.on("disconnect", () => {
       // a takeover by another tab already belongs to the new socket
       if ([...io.of("/").sockets.values()].some((s) => s.data.playerId === id)) return;
+      const character = me()?.character;
+      if (character != null) pastCharacters.set(id, character);
       leave(state, id);
       socket.broadcast.emit("build:preview", { playerId: id, cleared: true });
       broadcast();
     });
   });
 
-  return { levelState: () => ({ levelId: level.id, round: state.round, items }) };
+  return { levelState: () => ({ levelId: level?.id ?? 0, layout: level?.layout ?? 1, round: state.round, items }) };
 }
-
-const pick = <T>(xs: readonly T[]): T => xs[Math.floor(Math.random() * xs.length)];
 
 const isPose = (p: unknown): p is { x: number; y: number; vx: number; vy: number; facing: -1 | 1 } => {
   if (typeof p !== "object" || p === null) return false;

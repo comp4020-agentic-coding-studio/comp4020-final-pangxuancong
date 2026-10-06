@@ -53,25 +53,29 @@ if (!columns("placed_item").includes("created_by_id")) db.exec("ALTER TABLE plac
 if (!columns("level").includes("parent_id")) db.exec("ALTER TABLE level ADD COLUMN parent_id INTEGER REFERENCES level(id)");
 // how a finished game ended: archived (built on next game) or restarted
 if (!columns("level").includes("outcome")) db.exec("ALTER TABLE level ADD COLUMN outcome TEXT");
+// which base course (src/shared/levels.ts)
+if (!columns("level").includes("layout")) db.exec("ALTER TABLE level ADD COLUMN layout INTEGER NOT NULL DEFAULT 1");
 
 const now = (): string => new Date().toISOString();
 
-export interface LevelRow { id: number; round: number; parentId: number | null }
+export interface LevelRow { id: number; round: number; parentId: number | null; layout: number }
 
-// the level in play, or a fresh one
-export function currentLevel(): LevelRow {
-  const row = db.prepare("SELECT id, round, parent_id AS parentId FROM level WHERE finished_at IS NULL ORDER BY id DESC LIMIT 1").get() as LevelRow | undefined;
-  return row ?? startLevel(null);
+// the game in play, if any (with none, players choose a level first)
+export function currentLevel(): LevelRow | null {
+  const row = db.prepare("SELECT id, round, parent_id AS parentId, layout FROM level WHERE finished_at IS NULL ORDER BY id DESC LIMIT 1").get() as LevelRow | undefined;
+  return row ?? null;
 }
 
-// A new game. Built on an archived level, it starts with a copy of that
-// level's surviving items; the archived level keeps its own.
-export function startLevel(parentId: number | null): LevelRow {
+// A new game. Archived, it continues on the parent's course with a copy of
+// its surviving items (the archived level keeps its own); otherwise it starts
+// bare on the chosen course.
+export function startLevel(parent: LevelRow | null, layout: number): LevelRow {
   const t = now();
-  const { lastInsertRowid } = db.prepare("INSERT INTO level (round, parent_id, created_at, updated_at) VALUES (1, ?, ?, ?)").run(parentId, t, t);
+  const course = parent?.layout ?? layout;
+  const { lastInsertRowid } = db.prepare("INSERT INTO level (round, parent_id, layout, created_at, updated_at) VALUES (1, ?, ?, ?, ?)").run(parent?.id ?? null, course, t, t);
   const id = Number(lastInsertRowid);
-  if (parentId !== null) for (const item of readItems(parentId)) insertItem(id, { ...item, id: randomUUID() });
-  return { id, round: 1, parentId };
+  if (parent) for (const item of readItems(parent.id)) insertItem(id, { ...item, id: randomUUID() });
+  return { id, round: 1, parentId: parent?.id ?? null, layout: course };
 }
 
 export function finishLevel(id: number, outcome: "archived" | "restarted"): void {
