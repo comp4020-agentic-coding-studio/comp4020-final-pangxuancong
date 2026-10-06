@@ -18,6 +18,12 @@ supports none of these claims probably doesn't belong.
   first; a short explanation follows after it settles. No failure modals.
 - **G6 Success belongs to the room.** No personal score, XP, streaks,
   achievements or leaderboards.
+- **G2a No combination locks.** No mechanism may have one independent hidden
+  correct value. Success must depend on relationships between at least
+  adjacent mechanisms: a mechanism's working range is a function of what
+  arrives from upstream (a shallower ramp sends a slower ball, which needs a
+  stronger spring). There is a feasible region of settings, never one answer.
+  Judged by playtesting, not by a test.
 - **G7 Tactile, restrained presentation.** The machine dominates the page
   (`docs/ART_DIRECTION.md`).
 
@@ -58,10 +64,19 @@ cosmetics, settings dashboards.
 
 ## Open questions
 
-Recorded so they are decided, not defaulted:
+Recorded so they are decided, not defaulted. Neither is built yet.
 
 - **A solved machine.** The simulation is deterministic and settings persist,
-  so once a run succeeds the next visitor inherits a solved machine. What
-  happens after success?
+  so once a run succeeds the next visitor inherits a solved machine.
+  Leaning towards: a completed machine is archived with its attempt count and
+  replaced by Machine #N+1 with the same layout but different internal
+  challenge parameters (ball weight, launch speed, interaction ranges, how
+  sensitive one mechanism is to the one before). What persists is the room's
+  history of machines it finished together, not a solved answer occupying the
+  page forever. No new art assets needed.
 - **More people than mechanisms.** Five mechanisms; the showcase is a room
-  full of people. What does the sixth person do?
+  full of people. Adding mechanisms per person would break "small, legible,
+  constrained". Leaning towards: five operator seats plus observers, with
+  rotation between runs (observe → claim → operate → run → release), so a new
+  operator inherits the previous one's setting. Decide in the week 10
+  multi-user decision.

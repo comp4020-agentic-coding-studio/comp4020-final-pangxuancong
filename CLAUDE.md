@@ -42,8 +42,11 @@ Current status:
 - `/readme/` must publish the README in full, rendered on the server.
 - Leave the course-fixed settings in `fly.toml`, the `/data` volume and the
   shipped `spec/invariants.test.ts` as they are.
-- Do not write `README.md`, `PROCESS.md` or `reflections/` prose for the human,
-  and never fabricate process evidence, crit feedback or citations.
+- No mechanism may have one hidden correct value; success depends on how
+  adjacent mechanisms relate (`docs/PRODUCT_RULES.md`, G2a).
+- `README.md`, `PROCESS.md` and `reflections/` are drafted only from the
+  human's own ideas and experience, for them to rewrite. Never fabricate
+  process evidence, crit feedback, sources read or citations.
 
 ## Completion
 
