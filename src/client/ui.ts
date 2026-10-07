@@ -159,6 +159,8 @@ export function render(): void {
   el.help.innerHTML =
     snap.phase === "BUILD"
       ? `Choose a piece (<kbd>1</kbd>–<kbd>6</kbd>), click the level to put it there, <kbd>Enter</kbd> to place. <kbd>R</kbd> turns it, <kbd>Esc</kbd> cancels. Pieces are permanent once placed. Look around: scroll to zoom, drag with the right button, or <kbd>←</kbd><kbd>↑</kbd><kbd>→</kbd><kbd>↓</kbd>.`
+      : snap.phase === "RUN" && snap.players.find((p) => p.id === store.me)?.run !== "RUNNING"
+        ? `Watching the others: <kbd>E</kbd> for the next runner, or click a badge on the edge · arrows, right drag or the wheel to look around yourself`
       : snap.phase === "RUN" || snap.phase === "COUNTDOWN"
         ? `<kbd>←</kbd> <kbd>→</kbd> or <kbd>A</kbd> <kbd>D</kbd> to move · <kbd>↑</kbd> <kbd>W</kbd> or <kbd>Space</kbd> to jump · against a wall, jump again to climb it`
         : "";

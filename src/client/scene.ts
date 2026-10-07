@@ -82,9 +82,16 @@ export class LevelScene extends Phaser.Scene {
   private ghostPiece!: Phaser.GameObjects.Graphics; // my preview's piece, drawn translucent
   private previewLabels = new Map<string, Phaser.GameObjects.Text>();
   private flag!: Phaser.GameObjects.Container;
-  private keys!: Record<"left" | "right" | "up" | "down" | "a" | "d" | "w" | "s" | "space", Phaser.Input.Keyboard.Key>;
-  // the camera: following your own runner, or free to pan and zoom
-  private following = false;
+  private keys!: Record<"left" | "right" | "up" | "down" | "a" | "d" | "w" | "s" | "e" | "space", Phaser.Input.Keyboard.Key>;
+  // the camera: following your own runner, someone you watch, or free
+  private followTarget: Phaser.GameObjects.Components.Transform | null = null;
+  private watching: string | null = null; // out of the run: whose run we follow
+  private watchLostAt = 0;
+  private freeLook = false;
+  private banner!: Phaser.GameObjects.Text;
+  // runners outside the view, as badges on its edge; deaths flash there too
+  private pointers = new Map<string, Phaser.GameObjects.Container>();
+  private flashes: { x: number; y: number; at: number; view: Phaser.GameObjects.Container }[] = [];
   private dragFrom: { x: number; y: number } | null = null;
   private pointerInside = false;
   private lastView = "";
@@ -137,7 +144,7 @@ export class LevelScene extends Phaser.Scene {
     const K = Phaser.Input.Keyboard.KeyCodes;
     this.keys = {
       left: kb.addKey(K.LEFT), right: kb.addKey(K.RIGHT), up: kb.addKey(K.UP), down: kb.addKey(K.DOWN),
-      a: kb.addKey(K.A), d: kb.addKey(K.D), w: kb.addKey(K.W), s: kb.addKey(K.S), space: kb.addKey(K.SPACE),
+      a: kb.addKey(K.A), d: kb.addKey(K.D), w: kb.addKey(K.W), s: kb.addKey(K.S), e: kb.addKey(K.E), space: kb.addKey(K.SPACE),
     };
 
     // the world is larger than the view: the camera never leaves it
@@ -151,7 +158,7 @@ export class LevelScene extends Phaser.Scene {
       if (this.dragFrom) {
         // right or middle drag pans the free camera
         const cam = this.cameras.main;
-        if (!this.following) cam.setScroll(cam.scrollX - (p.x - this.dragFrom.x) / cam.zoom, cam.scrollY - (p.y - this.dragFrom.y) / cam.zoom);
+        if (this.lookFreely()) cam.setScroll(cam.scrollX - (p.x - this.dragFrom.x) / cam.zoom, cam.scrollY - (p.y - this.dragFrom.y) / cam.zoom);
         this.dragFrom = { x: p.x, y: p.y };
         return;
       }
@@ -163,6 +170,9 @@ export class LevelScene extends Phaser.Scene {
     });
     this.input.on("pointerup", () => (this.dragFrom = null));
     this.input.on("wheel", (p: Phaser.Input.Pointer, _over: unknown, _dx: number, dy: number) => this.zoomAt(p, dy));
+    this.banner = this.add.text(0, 0, "", {
+      fontFamily: "system-ui, sans-serif", fontSize: "16px", color: "#4a4640", backgroundColor: "#faf6eee6", padding: { x: 12, y: 6 },
+    }).setOrigin(0.5, 0).setScrollFactor(0).setDepth(40).setVisible(false);
     this.input.on("gameout", () => {
       this.pointerInside = false;
       this.dragFrom = null;
@@ -185,7 +195,7 @@ export class LevelScene extends Phaser.Scene {
 
   // the wheel zooms the free camera, keeping the point under the pointer still
   private zoomAt(p: Phaser.Input.Pointer, dy: number): void {
-    if (this.following) return;
+    if (!this.lookFreely()) return;
     const cam = this.cameras.main;
     const zoom = Phaser.Math.Clamp(cam.zoom * (dy > 0 ? 0.9 : 1 / 0.9), this.minZoom, 1.25);
     const before = cam.getWorldPoint(p.x, p.y);
@@ -195,25 +205,33 @@ export class LevelScene extends Phaser.Scene {
     cam.setScroll(cam.scrollX + before.x - after.x, cam.scrollY + before.y - after.y);
   }
 
-  // RUN (and the countdown before it) follows your own runner at full size;
-  // otherwise the camera is yours to move
+  // RUN (and the countdown before it) follows your own runner at full size.
+  // Out of the run (dead, finished, watching) it follows someone still
+  // running, until you look around yourself; otherwise the camera is yours.
   private steerCamera(dt: number): void {
     const cam = this.cameras.main;
-    const follow = !!this.local && (this.phase === "COUNTDOWN" || (this.phase === "RUN" && this.local.live));
-    if (follow !== this.following) {
-      this.following = follow;
-      if (follow && this.local) {
+    const k = this.keys;
+    const dx = (k.right.isDown || k.d.isDown ? 1 : 0) - (k.left.isDown || k.a.isDown ? 1 : 0);
+    const dy = (k.down.isDown || k.s.isDown ? 1 : 0) - (k.up.isDown || k.w.isDown ? 1 : 0);
+    let target: Phaser.GameObjects.Components.Transform | null = null;
+    if (this.runningMyself()) target = this.local!.rect;
+    else if (this.phase === "RUN") {
+      if (Phaser.Input.Keyboard.JustDown(k.e)) this.watchNext();
+      if (dx || dy) this.freeLook = true;
+      if (!this.freeLook) target = this.watchTarget();
+    }
+    if (target !== this.followTarget) {
+      this.followTarget = target;
+      if (target) {
         cam.zoomTo(1, reducedMotion.matches ? 0 : 300);
-        cam.startFollow(this.local.rect, false, 0.12, 0.12);
+        cam.startFollow(target, false, 0.12, 0.12);
       } else cam.stopFollow();
     }
-    if (!follow) {
-      const k = this.keys;
-      const dx = (k.right.isDown || k.d.isDown ? 1 : 0) - (k.left.isDown || k.a.isDown ? 1 : 0);
-      const dy = (k.down.isDown || k.s.isDown ? 1 : 0) - (k.up.isDown || k.w.isDown ? 1 : 0);
+    if (!target && (dx || dy)) {
       const speed = (700 * dt) / cam.zoom;
-      if (dx || dy) cam.setScroll(cam.scrollX + dx * speed, cam.scrollY + dy * speed);
+      cam.setScroll(cam.scrollX + dx * speed, cam.scrollY + dy * speed);
     }
+    this.drawBanner();
     // the view moved under a still pointer: what it points at changed
     const view = `${cam.scrollX.toFixed(1)},${cam.scrollY.toFixed(1)},${cam.zoom.toFixed(3)}`;
     if (view !== this.lastView) {
@@ -224,6 +242,162 @@ export class LevelScene extends Phaser.Scene {
         this.pointerMoved(p.worldX, p.worldY);
       }
     }
+  }
+
+  private runningMyself(): boolean {
+    return !!this.local && (this.phase === "COUNTDOWN" || (this.phase === "RUN" && this.local.live));
+  }
+
+  // Manual camera input. Refused while you run; while watching, it lets go.
+  private lookFreely(): boolean {
+    if (this.runningMyself()) return false;
+    if (this.followTarget) {
+      this.followTarget = null;
+      this.cameras.main.stopFollow();
+    }
+    if (this.phase === "RUN") this.freeLook = true;
+    return true;
+  }
+
+  // other players still running, in roster order, that we can see
+  private runnersToWatch(): string[] {
+    return (store.snap?.players ?? [])
+      .filter((p) => p.id !== store.me && p.active && p.run === "RUNNING")
+      .map((p) => p.id)
+      .filter((id) => {
+        const r = this.remotes.get(id);
+        return !!r && !r.gone && r.samples.length > 0;
+      });
+  }
+
+  private watchTarget(): Phaser.GameObjects.Components.Transform | null {
+    const runners = this.runnersToWatch();
+    if (this.watching && runners.includes(this.watching)) return this.remotes.get(this.watching)!.view;
+    // they just died or finished: stay a moment to see it, then move on
+    const now = performance.now();
+    if (this.watching) {
+      if (!this.watchLostAt) this.watchLostAt = now;
+      if (now - this.watchLostAt < 1000) return null;
+    }
+    this.watching = runners[0] ?? null;
+    this.watchLostAt = 0;
+    return this.watching ? this.remotes.get(this.watching)!.view : null;
+  }
+
+  watchNext(id?: string): void {
+    if (this.runningMyself() || this.phase !== "RUN") return;
+    const runners = this.runnersToWatch();
+    if (runners.length === 0) return;
+    this.watching = id && runners.includes(id) ? id : runners[(runners.indexOf(this.watching ?? "") + 1) % runners.length];
+    this.watchLostAt = 0;
+    this.freeLook = false;
+  }
+
+  private drawBanner(): void {
+    let text = "";
+    if (this.phase === "RUN" && !this.runningMyself()) {
+      const name = (id: string): string => store.snap?.players.find((p) => p.id === id)?.name ?? "";
+      const runners = this.runnersToWatch();
+      if (this.freeLook) text = runners.length ? "Looking around  ·  E: watch a runner" : "";
+      else if (this.watching && runners.includes(this.watching)) {
+        text = `Watching ${name(this.watching)}` + (runners.length > 1 ? "  ·  E: next runner" : "") + "  ·  arrows: look around";
+      }
+    }
+    this.banner.setVisible(text !== "");
+    if (text !== this.banner.text) this.banner.setText(text);
+    this.pin(this.banner, VIEW_W / 2, 10);
+  }
+
+  // Place a screen-fixed object (scroll factor 0) at a point of the view, the
+  // same size at any zoom: the camera scales it about the view's centre.
+  private pin(o: Phaser.GameObjects.Components.Transform, sx: number, sy: number): void {
+    const z = this.cameras.main.zoom;
+    o.setPosition(VIEW_W / 2 + (sx - VIEW_W / 2) / z, VIEW_H / 2 + (sy - VIEW_H / 2) / z);
+    o.setScale(1 / z);
+  }
+
+  // Where the edge badge for a world point goes, or null when it is in view.
+  private edgePoint(wx: number, wy: number): { x: number; y: number; angle: number } | null {
+    const cam = this.cameras.main;
+    const v = cam.worldView;
+    const sx = (wx - v.x) * cam.zoom, sy = (wy - v.y) * cam.zoom;
+    const inset = 34;
+    if (sx >= 0 && sx <= VIEW_W && sy >= 0 && sy <= VIEW_H) return null;
+    const dx = sx - VIEW_W / 2, dy = sy - VIEW_H / 2;
+    const t = Math.min((VIEW_W / 2 - inset) / Math.abs(dx || 1e-6), (VIEW_H / 2 - inset) / Math.abs(dy || 1e-6));
+    return { x: VIEW_W / 2 + dx * t, y: VIEW_H / 2 + dy * t, angle: Math.atan2(dy, dx) };
+  }
+
+  private makeBadge(id: string, dead: boolean): Phaser.GameObjects.Container {
+    const colour = this.colourOf(id);
+    const ring = this.add.graphics();
+    ring.fillStyle(C.paperLight, 0.96);
+    ring.fillCircle(0, 0, 17);
+    ring.lineStyle(3, dead ? C.red : colour, 1);
+    ring.strokeCircle(0, 0, 17);
+    const arrow = this.add.triangle(25, 0, 0, -6, 9, 0, 0, 6, dead ? C.red : colour).setOrigin(0, 0.5);
+    const head = this.add.graphics().setScale(0.55);
+    drawCharacter(head, this.characterOf(id), 1);
+    head.setPosition(0, 13);
+    const parts: Phaser.GameObjects.GameObject[] = [ring, arrow, head];
+    if (dead) {
+      const x = this.add.graphics();
+      x.lineStyle(4, C.red, 1);
+      x.lineBetween(-9, -9, 9, 9);
+      x.lineBetween(9, -9, -9, 9);
+      parts.push(x);
+    } else {
+      const name = store.snap?.players.find((p) => p.id === id)?.name ?? "";
+      parts.push(this.add.text(0, 21, name, { fontFamily: "system-ui, sans-serif", fontSize: "10px", color: "#4a4640" }).setOrigin(0.5, 0));
+    }
+    const c = this.add.container(0, 0, parts).setScrollFactor(0).setDepth(38).setData("arrow", arrow);
+    if (!dead) {
+      // click a badge to watch that runner
+      c.setSize(40, 40).setInteractive({ useHandCursor: true });
+      c.on("pointerdown", (p: Phaser.Input.Pointer, _x: number, _y: number, e: Phaser.Types.Input.EventData) => {
+        if (p.rightButtonDown()) return;
+        e.stopPropagation();
+        this.watchNext(id);
+      });
+    }
+    return c;
+  }
+
+  private drawPointers(): void {
+    const live = new Set<string>();
+    if (this.phase === "RUN" || this.phase === "COUNTDOWN") {
+      for (const id of this.runnersToWatch()) {
+        const r = this.remotes.get(id)!;
+        const at = this.edgePoint(r.view.x, r.view.y - 20);
+        if (!at) continue;
+        live.add(id);
+        let c = this.pointers.get(id);
+        if (!c) {
+          c = this.makeBadge(id, false);
+          this.pointers.set(id, c);
+        }
+        this.pin(c, at.x, at.y);
+        (c.getData("arrow") as Phaser.GameObjects.Triangle).setRotation(at.angle).setPosition(Math.cos(at.angle) * 21, Math.sin(at.angle) * 21);
+      }
+    }
+    for (const [id, c] of this.pointers) {
+      if (live.has(id)) continue;
+      c.destroy();
+      this.pointers.delete(id);
+    }
+    const now = performance.now();
+    this.flashes = this.flashes.filter((f) => {
+      const at = this.edgePoint(f.x, f.y);
+      const age = now - f.at;
+      if (!at || age > 1600 || this.phase !== "RUN") {
+        f.view.destroy();
+        return false;
+      }
+      this.pin(f.view, at.x, at.y);
+      (f.view.getData("arrow") as Phaser.GameObjects.Triangle).setRotation(at.angle).setPosition(Math.cos(at.angle) * 21, Math.sin(at.angle) * 21);
+      f.view.setAlpha(age < 1000 ? 1 : 1 - (age - 1000) / 600);
+      return true;
+    });
   }
 
   // ---------- the fixed course ----------
@@ -339,6 +513,8 @@ export class LevelScene extends Phaser.Scene {
     if (phase === "BUILD" || phase === "LEVEL_END") this.clearCharacters();
     if (phase === "COUNTDOWN" || (phase === "RUN" && before !== "COUNTDOWN")) this.placeAtStart(phase === "RUN");
     if (phase === "RUN") {
+      this.watching = null;
+      this.freeLook = false;
       this.runStartedAt = performance.now() - elapsedMs;
       this.release();
     }
@@ -518,6 +694,7 @@ export class LevelScene extends Phaser.Scene {
       if (p.run === "DEAD" || p.run === "DISCONNECTED") {
         r.gone = true;
         this.puff(r.view.x, r.view.y - 14, r.colour);
+        if (p.run === "DEAD") this.flashes.push({ x: r.view.x, y: r.view.y - 20, at: performance.now(), view: this.makeBadge(p.id, true) });
         r.view.destroy();
         this.remotes.delete(p.id);
       } else if (p.run === "FINISHED") {
@@ -719,6 +896,7 @@ export class LevelScene extends Phaser.Scene {
     }
     this.drawRemotes(time);
     this.steerCamera(delta / 1000);
+    this.drawPointers();
   }
 
   // fans spin, moving platforms slide (and carry whoever rides them)

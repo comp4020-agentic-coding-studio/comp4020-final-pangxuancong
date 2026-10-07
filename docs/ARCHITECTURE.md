@@ -36,6 +36,15 @@ runner at full size; otherwise (BUILD, after you finish or die, spectating)
 it is free: wheel to zoom, out to the whole level, right or middle drag or
 the arrow keys to pan. The camera is per client and never shared.
 
+Out of the run (dead, finished, or a visitor) the camera follows someone
+still running: E moves to the next runner, clicking an edge badge picks one,
+and any manual pan or zoom switches to free look until E. When the watched
+runner dies or finishes it stays a second, then moves on. Runners outside
+the view show as badges on its edge (their character, name and an arrow
+toward them); one who dies off screen flashes a red cross there. All of this
+is presentation of snapshots and poses already received; nothing new is
+sent.
+
 Moving platforms are driven by velocity, not by teleporting, so riders are
 carried. Set that velocity from the track itself (`movingVelocity`, the
 derivative of `movingOffset`) plus a small pull back onto the track. Never

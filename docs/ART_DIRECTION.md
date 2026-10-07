@@ -62,7 +62,10 @@ narrow screens.
 
 The level is bigger than the box: the camera follows your runner during RUN
 and is free to pan and zoom otherwise (`docs/ARCHITECTURE.md`). Zoomed fully
-out, the whole level fits the box.
+out, the whole level fits the box. Players outside the view appear as small
+round badges on its edge, in their colour with their character's head and
+an arrow toward them; a death off screen shows a red cross there for a
+moment. Watching someone shows one quiet line at the top of the box.
 
 ## Build preview
 

@@ -45,6 +45,8 @@ the live site and the pushed repo are still the crit 8 machine (tag `crit-8`).
   a 48×27 world: the original table along the bottom, a second half that
   climbs to the flag. The camera follows your runner in RUN; in BUILD it
   pans (right drag, arrow keys) and zooms (wheel, out to the whole level).
+  Runners off screen show as edge badges (red cross when they die there);
+  once out of the run you watch the others (E for the next, click a badge).
 - Four characters by seat: Chicken, Big Dog, Pot Horse, Dabai. Dust and
   spark particles for running, jumping, landing, wall kicks and springs.
 - Up to four players; more watch and take free seats at the next BUILD.
@@ -84,6 +86,8 @@ Dockerfile has not been run (no Docker here).
    score reveal, slower Moving Platform (F24–F27)~~ 2026-10-06.
    ~~Bigger world with a following camera (F28), Moving Platform fixed on
    high refresh rate screens~~ 2026-10-07.
+   ~~Edge badges for off-screen runners, watching after you are out (F29)~~
+   2026-10-07.
 4. Human playtest; tune movement, fan strength, the base course and whether
    +0.2 per kill crowds out helping.
 5. Motion and sound (F18), reconnect robustness.
@@ -179,3 +183,14 @@ world bounds; a player dropped into the goal finished, one below the world
 died; no console errors. Not checked: a real 120/144 Hz screen, a full hand
 run of each new second half (the solver is coarse), touch (no pinch or
 drag-to-pan yet), real people.
+
+2026-10-07, local: edge badges and watching. `pnpm typecheck` and
+`pnpm check` (37 tests) green against a separate server (port 8092).
+Browser, three sessions on The Swing: while running, Big Dog saw badges for
+the two players off to the left; Chicken fell and the camera moved to Big
+Dog with the "Watching" line; E switched to Pot Horse and back; clicking
+Pot Horse's edge badge switched to them; Pot Horse dying off screen showed
+the red-cross badge, which faded; arrow keys switched to free look and
+Big Dog's badge appeared at the right edge; no console errors. Not checked:
+watching after finishing (same code path as after dying) or as a visitor,
+touch (badges need a click), real people.
