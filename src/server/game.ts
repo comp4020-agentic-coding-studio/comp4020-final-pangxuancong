@@ -6,19 +6,96 @@ import { levelById } from "../shared/levels.ts";
 import type { ClientToServer, Handshake, PlayerView, ServerToClient, Snapshot } from "../shared/protocol.ts";
 import {
   BUILD_IDLE_MS, BUILD_MAX_MS, MAX_PLAYERS, MAX_ROUNDS, type Player, type RoundState, WIN_POINTS,
-  act, canBuild, join, leave, moved, newRoundState, pick, report, runComplete, tick, tooSimple, touchBuild, vote,
+  act, canBuild, claim, join, leave, moved, newRoundState, pick, report, runComplete, tick, tooSimple, touchBuild, unclaim, vote,
 } from "../shared/rounds.ts";
 import { type ScoreEvent, killCredit, tally } from "../shared/score.ts";
 import {
-  type LevelRow, currentLevel, destroyItem, finishLevel, insertItem, insertScoreEvent, readItems, readScoreEvents, setRound, startLevel, voidRoundScores,
+  type LevelRow, currentLevel, roomExists, roomsInPlay, destroyItem, finishLevel, insertItem, insertScoreEvent, readItems, readScoreEvents, setRound, startLevel, voidRoundScores,
 } from "./db.ts";
 
-// The server's half of the game: the round state machine on a clock, the level
-// in SQLite, and the sockets. It owns phase, roster, characters, build
-// actions, statuses, items and scores. It does not simulate anyone's movement
-// (docs/ARCHITECTURE.md).
+// The server's half of the game: rooms, each with the round state machine on
+// a clock, its level in SQLite, and its sockets. A room owns its phase,
+// roster, seats, build actions, statuses, items and scores. Nothing here
+// simulates anyone's movement (docs/ARCHITECTURE.md).
 
 type GameSocket = Socket<ClientToServer, ServerToClient>;
+type IO = Server<ClientToServer, ServerToClient>;
+
+// Rooms are named by a short code: /r/ABCD. No vowels, so codes never spell
+// words; no 0/O or 1/I to misread.
+const CODE_CHARS = "BCDFGHJKLMNPQRSTVWXZ23456789";
+export const isRoomCode = (v: unknown): v is string => typeof v === "string" && /^[A-Z0-9]{4,8}$/.test(v);
+// a room nobody has been in for this long leaves the lobby list (its level stays)
+const LISTED_MS = 30 * 60_000;
+// and is dropped from memory after this, once empty
+const FORGET_MS = 60 * 60_000;
+
+export interface RoomSummary { code: string; layout: number | null; phase: string; round: number; seated: number; here: number; maxPlayers: number; characters: number[] }
+
+export function createRooms(io: IO): {
+  list: () => RoomSummary[];
+  create: () => string;
+  exists: (code: string) => boolean;
+  levelState: (code: string) => { levelId: number; layout: number; round: number; items: Item[] } | null;
+} {
+  const rooms = new Map<string, Room>();
+  const open = (code: string): Room => {
+    let r = rooms.get(code);
+    if (!r) rooms.set(code, (r = createRoom(code)));
+    return r;
+  };
+  const exists = (code: string): boolean => rooms.has(code) || roomExists(code);
+  // games in play before a restart are listed again, with their level as it was
+  for (const code of roomsInPlay()) if (isRoomCode(code)) open(code);
+
+  // forget rooms long empty, so a long-running server does not hold them all
+  setInterval(() => {
+    const now = Date.now();
+    for (const [code, r] of rooms) if (r.sockets.size === 0 && now - r.lastSeenAt() > FORGET_MS) {
+      r.stop();
+      rooms.delete(code);
+    }
+  }, 60_000);
+
+  io.on("connection", (socket: GameSocket) => {
+    const { room } = (socket.handshake.auth ?? {}) as Partial<Handshake>;
+    // a link to a room that never existed, or a malformed one, gets nothing
+    if (!isRoomCode(room) || !exists(room)) {
+      socket.emit("room:missing");
+      socket.disconnect(true);
+      return;
+    }
+    open(room).connect(socket);
+  });
+
+  return {
+    list: () => {
+      const now = Date.now();
+      return [...rooms.values()]
+        .filter((r) => r.sockets.size > 0 || now - r.lastSeenAt() < LISTED_MS)
+        .map((r) => r.summary())
+        .sort((a, b) => b.here - a.here || a.code.localeCompare(b.code));
+    },
+    create: () => {
+      let code: string;
+      do code = Array.from({ length: 4 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join("");
+      while (exists(code));
+      open(code);
+      return code;
+    },
+    exists,
+    levelState: (code) => (exists(code) ? open(code).levelState() : null),
+  };
+}
+
+interface Room {
+  sockets: Set<GameSocket>;
+  connect: (socket: GameSocket) => void;
+  summary: () => RoomSummary;
+  levelState: () => { levelId: number; layout: number; round: number; items: Item[] };
+  lastSeenAt: () => number;
+  stop: () => void;
+}
 
 const TICK_MS = 200;
 // only show the auto-skip deadline once it is this close
@@ -27,9 +104,11 @@ const SHOW_DEADLINE_MS = 15_000;
 const nameOf = (p: Player): string => (p.character === null ? SPECTATOR.name : CHARACTERS[p.character].name);
 const colourOf = (p: Player | undefined): string => (p?.character == null ? SPECTATOR.colour : CHARACTERS[p.character].colour);
 
-export function createGame(io: Server<ClientToServer, ServerToClient>): { levelState: () => { levelId: number; layout: number; round: number; items: Item[] } } {
+function createRoom(code: string): Room {
+  const sockets = new Set<GameSocket>();
+  let lastSeen = Date.now();
   // a game in progress resumes in BUILD; with none, players choose a level
-  let level: LevelRow | null = currentLevel();
+  let level: LevelRow | null = currentLevel(code);
   let items = level ? readItems(level.id) : [];
   let scoreEvents: ScoreEvent[] = level ? readScoreEvents(level.id) : [];
   const state: RoundState = newRoundState(level?.round ?? 1, Date.now(), level ? "BUILD" : "SELECT");
@@ -53,6 +132,8 @@ export function createGame(io: Server<ClientToServer, ServerToClient>): { levelS
     const thisRound = tally(scoreEvents, state.round);
     const characterOf = (id: string): number | null => state.players.find((p) => p.id === id)?.character ?? pastCharacters.get(id) ?? null;
     return {
+      room: code,
+      draw: state.phase === "DRAW" ? state.draw : null,
       levelId: level?.id ?? 0,
       layout: level?.layout ?? 1,
       round: state.round,
@@ -100,14 +181,16 @@ export function createGame(io: Server<ClientToServer, ServerToClient>): { levelS
   // Everyone gets a fresh snapshot after any change; a quiet tick sends nothing.
   const broadcast = (): void => {
     const now = Date.now();
-    for (const [, socket] of io.of("/").sockets) socket.emit("snapshot", snapshotFor(socket.data.playerId ?? null, now));
+    for (const socket of sockets) socket.emit("snapshot", snapshotFor(socket.data.playerId ?? null, now));
   };
+  // to everyone else in this room
+  const others = (from: GameSocket): GameSocket[] => [...sockets].filter((s) => s !== from);
 
   // Timeouts can change build or run states inside tick() without a phase
   // transition, so compare what a snapshot would show before and after.
   const signature = (): string => JSON.stringify(state.players.map((p) => [p.id, p.build, p.run, p.connected, p.active, p.vote, p.pick, p.character]));
   let lastDeadlineBroadcast = 0;
-  setInterval(() => {
+  const timer = setInterval(() => {
     const now = Date.now();
     const before = signature();
     voidIfTooSimple();
@@ -131,9 +214,9 @@ export function createGame(io: Server<ClientToServer, ServerToClient>): { levelS
         // archive: keep building on a copy of this level; otherwise the chosen course, bare
         if (t.archive && level) {
           finishLevel(level.id, "archived");
-          level = startLevel(level, level.layout);
+          level = startLevel(code, level, level.layout);
         } else {
-          level = startLevel(null, t.archive ? 1 : t.layout);
+          level = startLevel(code, null, t.archive ? 1 : t.layout);
         }
         items = readItems(level.id);
         scoreEvents = [];
@@ -144,7 +227,7 @@ export function createGame(io: Server<ClientToServer, ServerToClient>): { levelS
       levelDone = false;
     }
     // the near-deadline warning, and the select countdown, refresh once a second
-    const counting = state.phase === "SELECT" && state.phaseEndsAt !== null;
+    const counting = (state.phase === "SELECT" || state.phase === "DRAW") && state.phaseEndsAt !== null;
     const nearDeadline = now - lastDeadlineBroadcast >= 1000 && (counting || state.players.some((p) => snapshotDeadline(p, now) !== null));
     if (t || nearDeadline || signature() !== before) {
       if (nearDeadline) lastDeadlineBroadcast = now;
@@ -152,12 +235,17 @@ export function createGame(io: Server<ClientToServer, ServerToClient>): { levelS
     }
   }, TICK_MS);
 
-  io.on("connection", (socket: GameSocket) => {
+  const connect = (socket: GameSocket): void => {
     const { playerId } = (socket.handshake.auth ?? {}) as Partial<Handshake>;
     const id = typeof playerId === "string" && playerId.length >= 8 && playerId.length <= 64 ? playerId : randomUUID();
     // one live socket per player: a second connection with the same id takes over
     socket.data.playerId = id;
-    for (const [, other] of io.of("/").sockets) if (other !== socket && other.data.playerId === id) other.disconnect(true);
+    for (const other of sockets) if (other.data.playerId === id) {
+      sockets.delete(other);
+      other.disconnect(true);
+    }
+    sockets.add(socket);
+    lastSeen = Date.now();
     join(state, id, SPECTATOR.name, Date.now());
     broadcast();
     const me = (): Player | undefined => state.players.find((p) => p.id === id);
@@ -167,11 +255,18 @@ export function createGame(io: Server<ClientToServer, ServerToClient>): { levelS
       if (pick(state, id, n, Date.now())) broadcast();
     });
 
+    socket.on("seat:claim", (character) => {
+      if (claim(state, id, character, Date.now())) broadcast();
+    });
+
+    socket.on("seat:leave", () => {
+      if (unclaim(state, id)) broadcast();
+    });
+
     socket.on("build:preview", (p) => {
       if (!canBuild(state, id)) return;
       touchBuild(state, id, Date.now());
-      if (p === null) socket.broadcast.emit("build:preview", { playerId: id, cleared: true });
-      else socket.broadcast.emit("build:preview", { playerId: id, choice: p.choice, proposal: p.proposal, targetId: p.targetId });
+      for (const o of others(socket)) o.emit("build:preview", p === null ? { playerId: id, cleared: true } : { playerId: id, choice: p.choice, proposal: p.proposal, targetId: p.targetId });
     });
 
     socket.on("build:commit", (proposal, ack) => {
@@ -186,7 +281,7 @@ export function createGame(io: Server<ClientToServer, ServerToClient>): { levelS
       insertItem(level.id, item);
       items = [...items, item];
       act(state, id, "PLACED");
-      socket.broadcast.emit("build:preview", { playerId: id, cleared: true });
+      for (const o of others(socket)) o.emit("build:preview", { playerId: id, cleared: true });
       ack({ ok: true });
       broadcast();
     });
@@ -199,7 +294,7 @@ export function createGame(io: Server<ClientToServer, ServerToClient>): { levelS
       destroyItem(targetId, nameOf(me()!), state.round);
       items = items.filter((i) => i.id !== targetId);
       act(state, id, "PLACED");
-      socket.broadcast.emit("build:preview", { playerId: id, cleared: true });
+      for (const o of others(socket)) o.emit("build:preview", { playerId: id, cleared: true });
       ack({ ok: true });
       broadcast();
     });
@@ -207,19 +302,21 @@ export function createGame(io: Server<ClientToServer, ServerToClient>): { levelS
     socket.on("build:skip", (ack) => {
       if (typeof ack !== "function") return;
       if (!act(state, id, "SKIPPED")) return ack({ ok: false, error: "nothing to skip" });
-      socket.broadcast.emit("build:preview", { playerId: id, cleared: true });
+      for (const o of others(socket)) o.emit("build:preview", { playerId: id, cleared: true });
       ack({ ok: true });
       broadcast();
     });
 
     let last = { x: NaN, y: NaN };
+    // poses travel in RUN, and while seated players walk the lobby choosing a map
     socket.on("run:pose", (p) => {
-      if (state.phase !== "RUN" || !isPose(p)) return;
+      const lobby = (state.phase === "SELECT" || state.phase === "DRAW") && me()?.character != null;
+      if ((state.phase !== "RUN" && !lobby) || !isPose(p)) return;
       if (Math.abs(p.x - last.x) > 2 || Math.abs(p.y - last.y) > 2) {
         moved(state, id, Date.now());
         last = { x: p.x, y: p.y };
       }
-      socket.volatile.broadcast.emit("run:pose", { playerId: id, x: p.x, y: p.y, vx: p.vx, vy: p.vy, facing: p.facing });
+      for (const o of others(socket)) o.volatile.emit("run:pose", { playerId: id, x: p.x, y: p.y, vx: p.vx, vy: p.vy, facing: p.facing });
     });
 
     socket.on("run:result", (p) => {
@@ -246,16 +343,28 @@ export function createGame(io: Server<ClientToServer, ServerToClient>): { levelS
 
     socket.on("disconnect", () => {
       // a takeover by another tab already belongs to the new socket
-      if ([...io.of("/").sockets.values()].some((s) => s.data.playerId === id)) return;
+      if (!sockets.delete(socket)) return;
+      lastSeen = Date.now();
       const character = me()?.character;
       if (character != null) pastCharacters.set(id, character);
-      leave(state, id);
-      socket.broadcast.emit("build:preview", { playerId: id, cleared: true });
+      leave(state, id, Date.now());
+      for (const o of others(socket)) o.emit("build:preview", { playerId: id, cleared: true });
       broadcast();
     });
-  });
+  };
 
-  return { levelState: () => ({ levelId: level?.id ?? 0, layout: level?.layout ?? 1, round: state.round, items }) };
+  return {
+    sockets,
+    connect,
+    summary: () => ({
+      code, layout: level?.layout ?? null, phase: state.phase, round: state.round,
+      seated: state.players.filter((p) => p.character !== null).length, here: sockets.size, maxPlayers: MAX_PLAYERS,
+      characters: state.players.flatMap((p) => (p.character === null ? [] : [p.character])),
+    }),
+    levelState: () => ({ levelId: level?.id ?? 0, layout: level?.layout ?? 1, round: state.round, items }),
+    lastSeenAt: () => (sockets.size > 0 ? Date.now() : lastSeen),
+    stop: () => clearInterval(timer),
+  };
 }
 
 const isPose = (p: unknown): p is { x: number; y: number; vx: number; vy: number; facing: -1 | 1 } => {

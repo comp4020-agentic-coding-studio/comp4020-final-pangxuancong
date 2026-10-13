@@ -50,8 +50,10 @@ consequences beat a large inventory of weak ones.
 - **P8 Presence through the level.** Other people are felt by seeing them run
   and seeing their placements land. No chat box.
 - **P9 Tactile, restrained presentation** (`docs/ART_DIRECTION.md`).
-- **P10 Small rooms.** At most four players build and run; more watch and
-  rotate in. Four keeps the level readable and every piece attributable.
+- **P10 Small rooms.** A room seats four, one per character; more watch and
+  take a seat when one is released. Four keeps the level readable and every
+  piece attributable. Many rooms can play at once, each on its own level
+  (`docs/decisions/0002-rooms-and-seats.md`).
 
 ## Traceability
 
@@ -83,8 +85,8 @@ When goals conflict:
 ## Out of scope
 
 Unless the human explicitly changes the product: chat, direct messages,
-accounts, profiles, likes, all-time leaderboards, XP, achievements, multiple
-rooms, matchmaking, stores, cosmetics, AI features, unlimited level-editor
+accounts, profiles, likes, all-time leaderboards, XP, achievements,
+matchmaking, room settings (names, passwords, owners), stores, cosmetics, AI features, unlimited level-editor
 tools, hundreds of object types, realistic physics simulation, ranked play,
 player-player collision.
 

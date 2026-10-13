@@ -10,13 +10,20 @@ export const COUNTDOWN_MS = 3000;
 export const RESULTS_MS = 4500; // the round card and its score bars
 export const STAMP_MS = 1500; // extra, when everyone made it: "too simple"
 export const VOTE_MS = 40_000; // LEVEL_END: the score reveal, then archive or restart
-export const SELECT_MS = 20_000; // after the first pick, the rest have this long
+export const SELECT_MS = 30_000; // after the first player stands under a map, the rest have this long
+export const LOCK_MS = 2000; // everyone under a map: this long to change their mind
+export const DRAW_MS = 5000; // a split vote: the weighted draw, then its result
 export const LEVEL_IDS = [1, 2, 3] as const;
+// A dropped connection is not leaving: for this long the round treats the
+// player as still here (a wifi blip costs nothing), and for SEAT_HOLD_MS their
+// character, seat and points wait for them (docs/decisions/0002-rooms-and-seats.md).
+export const RECONNECT_GRACE_MS = 8000;
+export const SEAT_HOLD_MS = 120_000;
 export const BUILD_IDLE_MS = 40_000; // no build activity: auto-skip
 export const BUILD_MAX_MS = 120_000; // nobody is left waiting after this
 export const RUN_IDLE_MS = 30_000; // a character that has not moved: out
 
-export type Phase = "SELECT" | "BUILD" | "COUNTDOWN" | "RUN" | "RESULTS" | "LEVEL_END";
+export type Phase = "SELECT" | "DRAW" | "BUILD" | "COUNTDOWN" | "RUN" | "RESULTS" | "LEVEL_END";
 export type Vote = "ARCHIVE" | "RESTART";
 export type BuildState = "WAITING" | "PLACED" | "SKIPPED" | "DISCONNECTED";
 export type RunState = "RUNNING" | "DEAD" | "FINISHED" | "DISCONNECTED";
@@ -25,15 +32,19 @@ export interface Player {
   id: string;
   name: string;
   connected: boolean;
+  leftAt: number | null; // when the connection dropped, while it is down
   active: boolean; // on this round's roster; otherwise spectating
   build: BuildState;
   run: RunState | null; // null until the roster closes
   lastActivityAt: number; // build activity, or character movement during RUN
-  joinedAt: number; // seats go in order of arrival
+  joinedAt: number;
   vote: Vote | null; // LEVEL_END only
-  pick: number | null; // SELECT only: which level
-  character: number | null; // index into CHARACTERS while seated
+  pick: number | null; // SELECT only: the map they stand under
+  character: number | null; // the seat: index into CHARACTERS; null watches
 }
+
+// A split vote is settled by a draw weighted by the votes for each map.
+export interface Draw { options: { layout: number; votes: number }[]; result: number }
 
 export interface RoundState {
   phase: Phase;
@@ -41,6 +52,9 @@ export interface RoundState {
   phaseEndsAt: number | null; // COUNTDOWN, RESULTS, LEVEL_END, and SELECT once someone picks
   round: number; // 1..MAX_ROUNDS
   players: Player[];
+  firstPickAt: number | null; // SELECT: someone stood under a map
+  allInAt: number | null; // SELECT: since when every seated player has
+  draw: Draw | null; // DRAW
 }
 
 export type Transition =
@@ -49,6 +63,7 @@ export type Transition =
   | { to: "RESULTS"; levelDone: boolean; tooSimple: boolean }
   | { to: "LEVEL_END" }
   | { to: "SELECT" }
+  | { to: "DRAW" }
   | { to: "BUILD"; newLevel: false }
   | { to: "BUILD"; newLevel: true; archive: true }
   | { to: "BUILD"; newLevel: true; archive: false; layout: number };
@@ -60,74 +75,120 @@ export const newRoundState = (round: number, now: number, phase: "BUILD" | "SELE
   phaseEndsAt: null,
   round,
   players: [],
+  firstPickAt: null,
+  allInAt: null,
+  draw: null,
 });
 
 export const activePlayers = (s: RoundState): Player[] => s.players.filter((p) => p.active);
 const find = (s: RoundState, id: string): Player | undefined => s.players.find((p) => p.id === id);
-const seatsTaken = (s: RoundState): number => s.players.filter((p) => p.active && p.connected).length;
+const seated = (s: RoundState): Player[] => s.players.filter((p) => p.character !== null);
 
+// Connecting, or reconnecting. Joining gives no seat: a player takes one by
+// choosing a character (claim). Someone coming back to a seat they still hold
+// carries on; if they had not built yet this BUILD, they still can.
 export function join(s: RoundState, id: string, name: string, now: number): Player {
-  // the first person into an empty BUILD gets the whole build window
-  if (s.phase === "BUILD" && !s.players.some((q) => q.active && q.connected)) s.phaseStartedAt = now;
   let p = find(s, id);
   if (!p) {
-    p = { id, name, connected: false, active: false, build: "WAITING", run: null, lastActivityAt: now, joinedAt: now, vote: null, pick: null, character: null };
+    p = { id, name, connected: false, leftAt: null, active: false, build: "WAITING", run: null, lastActivityAt: now, joinedAt: now, vote: null, pick: null, character: null };
     s.players.push(p);
   }
-  // the roster is open during BUILD while a seat is free; a returning player
-  // who had not acted waits again
-  const seat = seatsTaken(s) < MAX_PLAYERS || (p.active && p.build !== "DISCONNECTED");
   p.connected = true;
+  p.leftAt = null;
   p.name = name;
-  if (s.phase === "BUILD" && seat) {
-    if (!p.active || p.build === "DISCONNECTED") {
-      p.active = true;
-      p.build = "WAITING";
-      p.lastActivityAt = now;
-    }
-    if (p.character === null) p.character = freeCharacter(s);
+  if (s.phase === "BUILD" && p.active && p.build === "DISCONNECTED") {
+    p.build = "WAITING";
+    p.lastActivityAt = now;
   }
   return p;
 }
 
-// the lowest character nobody seated is using
-function freeCharacter(s: RoundState): number {
-  const used = new Set(s.players.filter((p) => p.active && p.connected).map((p) => p.character));
-  for (let c = 0; c < MAX_PLAYERS; c++) if (!used.has(c)) return c;
-  return 0;
-}
-
-export function pick(s: RoundState, id: string, level: number, now: number): boolean {
+// Choosing one of the four characters is taking a seat. A free character can
+// be taken at any time; it plays from now if BUILD is open, otherwise from the
+// next BUILD. While choosing a level a seated player may swap to another free one.
+export function claim(s: RoundState, id: string, character: number, now: number): boolean {
   const p = find(s, id);
-  if (s.phase !== "SELECT" || !p?.connected || !(LEVEL_IDS as readonly number[]).includes(level)) return false;
-  p.pick = level;
-  // the first pick starts the clock for everyone else
-  if (s.phaseEndsAt === null) s.phaseEndsAt = now + SELECT_MS;
+  if (!p?.connected || !Number.isInteger(character) || character < 0 || character >= MAX_PLAYERS) return false;
+  if (p.character === character) return true;
+  if (s.players.some((q) => q.character === character)) return false;
+  if (p.character !== null && s.phase !== "SELECT") return false;
+  // the first person into an empty BUILD gets the whole build window
+  if (s.phase === "BUILD" && !s.players.some((q) => q.active && q.connected)) s.phaseStartedAt = now;
+  p.character = character;
+  if (s.phase === "BUILD" && !p.active) {
+    p.active = true;
+    p.build = "WAITING";
+    p.lastActivityAt = now;
+  }
   return true;
 }
 
-// Most picks wins; a tie goes to the lower level, nobody picking to level 1.
-export const pickResult = (s: RoundState): number => {
-  let best: number = LEVEL_IDS[0], most = 0;
-  for (const id of LEVEL_IDS) {
-    const count = s.players.filter((p) => p.pick === id).length;
-    if (count > most) [best, most] = [id, count];
+// Giving a seat back to watch, while choosing a level.
+export function unclaim(s: RoundState, id: string): boolean {
+  const p = find(s, id);
+  if (!p || p.character === null || s.phase !== "SELECT") return false;
+  p.character = null;
+  p.pick = null;
+  return true;
+}
+
+// Standing under a map's sign (or walking away from it: null). Seated
+// players only; the clock starts with the first.
+export function pick(s: RoundState, id: string, level: number | null, now: number): boolean {
+  const p = find(s, id);
+  if (s.phase !== "SELECT" || !p?.connected || p.character === null) return false;
+  if (level !== null && !(LEVEL_IDS as readonly number[]).includes(level)) return false;
+  if (p.pick === level) return true;
+  p.pick = level;
+  if (level !== null && s.firstPickAt === null) s.firstPickAt = now;
+  s.allInAt = null; // a change of mind restarts the short lock
+  return true;
+}
+
+// The votes for each map; one map wins outright, several go to a draw.
+export const pickTally = (s: RoundState): { layout: number; votes: number }[] =>
+  LEVEL_IDS.map((layout) => ({ layout, votes: seated(s).filter((p) => p.connected && p.pick === layout).length })).filter((o) => o.votes > 0);
+
+// A draw weighted by the votes: 3 for one map and 1 for another is 75% and 25%.
+// `r` is in [0, 1).
+export const drawResult = (options: { layout: number; votes: number }[], r: number): number => {
+  const total = options.reduce((n, o) => n + o.votes, 0);
+  let at = r * total;
+  for (const o of options) {
+    if (at < o.votes) return o.layout;
+    at -= o.votes;
   }
-  return best;
+  return options.at(-1)!.layout;
 };
 
-export function leave(s: RoundState, id: string): void {
+// The connection dropped. Someone without a seat is simply gone; a seated
+// player is held: the round waits RECONNECT_GRACE_MS for them, their seat
+// waits SEAT_HOLD_MS (both applied in tick).
+export function leave(s: RoundState, id: string, now: number): void {
   const p = find(s, id);
   if (!p) return;
   p.connected = false;
-  if (!p.active) {
-    s.players = s.players.filter((q) => q !== p);
-    return;
-  }
-  if (p.build === "WAITING") p.build = "DISCONNECTED";
-  if (p.run === "RUNNING") p.run = "DISCONNECTED";
-  p.pick = null;
+  p.leftAt = now;
   p.vote = null;
+  if (p.pick !== null) {
+    p.pick = null;
+    s.allInAt = null;
+  }
+  if (p.character === null) s.players = s.players.filter((q) => q !== p);
+}
+
+// What a dropped connection costs, once its grace is over: this BUILD or
+// RUN goes on without them, and in the end the seat itself.
+function expire(s: RoundState, now: number): void {
+  for (const p of s.players) {
+    if (p.connected || p.leftAt === null) continue;
+    if (now - p.leftAt >= RECONNECT_GRACE_MS) {
+      if (p.active && p.build === "WAITING" && s.phase === "BUILD") p.build = "DISCONNECTED";
+      if (p.run === "RUNNING") p.run = "DISCONNECTED";
+    }
+  }
+  // seats released; someone still on a round's roster stays there, marked away
+  s.players = s.players.filter((p) => p.connected || p.leftAt === null || now - p.leftAt < SEAT_HOLD_MS || (p.active && s.phase !== "SELECT" && s.phase !== "BUILD"));
 }
 
 // An active player with their build action still unused.
@@ -192,13 +253,41 @@ export const tooSimple = (s: RoundState): boolean => {
 // Returns the transition taken, if any; the caller does the side effects
 // (persisting the round, starting a new level, broadcasting). `topPoints` is
 // the best score in the game so far: WIN_POINTS ends the game at round end.
-export function tick(s: RoundState, now: number, topPoints = 0): Transition | null {
+export function tick(s: RoundState, now: number, topPoints = 0, random: () => number = Math.random): Transition | null {
+  expire(s, now);
   switch (s.phase) {
     case "SELECT": {
-      const here = s.players.filter((p) => p.connected);
+      // everyone seated and here stands under a map, for LOCK_MS; or the
+      // clock since the first one runs out
+      const here = seated(s).filter((p) => p.connected);
       const allIn = here.length > 0 && here.every((p) => p.pick !== null);
-      if (!allIn && (s.phaseEndsAt === null || now < s.phaseEndsAt)) return null;
-      const layout = pickResult(s);
+      if (allIn) s.allInAt ??= now;
+      else s.allInAt = null;
+      const ends = [s.allInAt === null ? Infinity : s.allInAt + LOCK_MS, s.firstPickAt === null ? Infinity : s.firstPickAt + SELECT_MS];
+      const at = Math.min(...ends);
+      s.phaseEndsAt = Number.isFinite(at) ? at : null;
+      const options = pickTally(s);
+      if (s.phaseEndsAt === null || now < s.phaseEndsAt) return null;
+      if (options.length === 0) {
+        // the clock ran out with nobody under a sign any more: wait again
+        s.firstPickAt = null;
+        s.phaseEndsAt = null;
+        return null;
+      }
+      if (options.length === 1) {
+        s.round = 1;
+        startBuild(s, now);
+        return { to: "BUILD", newLevel: true, archive: false, layout: options[0].layout };
+      }
+      s.phase = "DRAW";
+      s.phaseStartedAt = now;
+      s.phaseEndsAt = now + DRAW_MS;
+      s.draw = { options, result: drawResult(options, random()) };
+      return { to: "DRAW" };
+    }
+    case "DRAW": {
+      if (now < s.phaseEndsAt!) return null;
+      const layout = s.draw!.result;
       s.round = 1;
       startBuild(s, now);
       return { to: "BUILD", newLevel: true, archive: false, layout };
@@ -218,8 +307,9 @@ export function tick(s: RoundState, now: number, topPoints = 0): Transition | nu
       s.phase = "COUNTDOWN";
       s.phaseStartedAt = now;
       s.phaseEndsAt = now + COUNTDOWN_MS;
-      // the roster closes
-      for (const p of s.players) p.run = p.active ? (p.connected ? "RUNNING" : "DISCONNECTED") : null;
+      // the roster closes; someone inside their reconnect grace still runs
+      // (expire marks them out if they do not come back)
+      for (const p of s.players) p.run = p.active ? (p.connected || (p.leftAt !== null && p.build !== "DISCONNECTED") ? "RUNNING" : "DISCONNECTED") : null;
       return { to: "COUNTDOWN" };
     }
     case "COUNTDOWN": {
@@ -268,31 +358,35 @@ export function tick(s: RoundState, now: number, topPoints = 0): Transition | nu
   }
 }
 
-// A fresh BUILD: the first four connected players, in order of arrival, are
-// on the roster and nobody has acted; anyone else watches.
+// A fresh BUILD: everyone holding a seat is on the roster, and nobody has
+// acted. A seat held for someone whose connection is down is on it too: their
+// grace runs from when they dropped (expire), and if they are back in time
+// they build.
 function startBuild(s: RoundState, now: number): void {
   s.phase = "BUILD";
   s.phaseStartedAt = now;
   s.phaseEndsAt = null;
-  s.players = s.players.filter((p) => p.connected).sort((a, b) => a.joinedAt - b.joinedAt);
-  s.players.forEach((p, i) => {
-    p.active = i < MAX_PLAYERS;
+  s.draw = null;
+  s.players = s.players.filter((p) => p.connected || p.character !== null).sort((a, b) => a.joinedAt - b.joinedAt);
+  for (const p of s.players) {
+    p.active = p.character !== null;
     p.build = "WAITING";
     p.run = null;
     p.vote = null;
     p.pick = null;
     p.lastActivityAt = now;
-    if (!p.active) p.character = null;
-  });
-  // seated players keep their character; newcomers get a free one
-  for (const p of s.players) if (p.active && p.character === null) p.character = freeCharacter(s);
+  }
+  expire(s, now);
 }
 
+// Back to choosing a level: seats are kept, picks start empty.
 function startSelect(s: RoundState, now: number): void {
   s.phase = "SELECT";
   s.phaseStartedAt = now;
   s.phaseEndsAt = null;
-  s.players = s.players.filter((p) => p.connected);
+  s.firstPickAt = null;
+  s.allInAt = null;
+  s.draw = null;
   for (const p of s.players) {
     p.active = false;
     p.pick = null;

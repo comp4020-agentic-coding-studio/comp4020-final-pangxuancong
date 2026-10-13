@@ -2,7 +2,7 @@
 // a whole snapshot whenever it changes: it is small, and a client never has to
 // reconcile partial updates. Movement goes out separately, often and lossy.
 import type { BuildChoice, Item, Proposal } from "./level.ts";
-import type { BuildState, Phase, RunState, Vote } from "./rounds.ts";
+import type { BuildState, Draw, Phase, RunState, Vote } from "./rounds.ts";
 
 export interface PlayerView {
   id: string;
@@ -15,14 +15,16 @@ export interface PlayerView {
   points: number; // this game
   gained: number; // this round, shown in RESULTS
   vote: Vote | null;
-  pick: number | null; // SELECT: the level they chose
-  character: number | null; // index into CHARACTERS, while seated
+  pick: number | null; // SELECT: the map they stand under
+  character: number | null; // their seat: index into CHARACTERS; null watches
 }
 
 // everyone who scored this game, including people who have since left
 export interface ScoreRow { playerId: string; name: string; colour: string; character: number | null; points: number; finishes: number; kills: number }
 
 export interface Snapshot {
+  room: string; // its code, as in /r/ABCD
+  draw: Draw | null; // DRAW: the maps in the draw, their votes, and the result
   levelId: number; // 0 while choosing the first level
   layout: number; // which course (src/shared/levels.ts)
   round: number;
@@ -72,16 +74,20 @@ export interface ClientToServer {
   // `by`: the spike or launcher that killed this player, if one did
   "run:result": (p: { result: "DEAD" | "FINISHED"; x: number; y: number; by?: string }) => void;
   "level:vote": (v: Vote) => void;
-  "level:pick": (level: number) => void;
+  "level:pick": (level: number | null) => void; // standing under a map's sign, or not
+  "seat:claim": (character: number) => void;
+  "seat:leave": () => void;
 }
 
 export interface ServerToClient {
   snapshot: (s: Snapshot) => void;
   "build:preview": (p: PreviewView | { playerId: string; cleared: true }) => void;
   "run:pose": (p: Pose & { playerId: string }) => void;
+  "room:missing": () => void; // no such room: the socket is closed
 }
 
 export interface Handshake {
   playerId: string;
   name: string;
+  room: string;
 }

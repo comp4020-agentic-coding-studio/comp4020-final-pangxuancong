@@ -34,8 +34,12 @@ players read cause and effect.
 
 ## How a game works
 
-1. **Choose a level.** Everyone picks one of three courses: The Gaps, The
-   Tower or The Swing. Most picks wins.
+1. **Pick a room, a character and a map.** The front page lists rooms, or
+   makes a new one with a link to share. A room seats four, one per
+   character; anyone else watches. Before each game the players walk their
+   characters under the sign of the course they want: The Gaps, The Tower or
+   The Swing. If they disagree, the course is drawn by lot, weighted by the
+   votes.
 2. **Build.** Each player gets one action: place a piece (Platform, Spring,
    Spike, Fan, Moving Platform or Launcher), use the Demolition Bomb on any
    piece already placed, or skip. Other players see what you are considering
@@ -102,7 +106,8 @@ fair.
 
 ## What I chose not to build
 
-- No chat, accounts, profiles, all-time leaderboards, rooms or matchmaking.
+- No chat, accounts, profiles, all-time leaderboards or matchmaking. Rooms
+  only seat four people at a time: no names, passwords or owners.
 - No pathfinding and no "there must always be a path" rule.
 - No collisions between players.
 - No general physics engine. Platformer physics (Phaser Arcade) only.
@@ -111,8 +116,8 @@ fair.
 
 The game has three courses, six pieces plus the Demolition Bomb, four
 characters (Chicken, Big Dog, Pot Horse and Dabai), scores, and the
-archive-or-restart vote. It is deployed and playable by up to four people at
-once. Any extra visitors watch and take a free seat at the next build.
+archive-or-restart vote. Many rooms can play at once, four players each; a
+dropped connection keeps its seat for two minutes.
 
 ## Sources
 

@@ -44,6 +44,12 @@ Loop and rounds:
   (each is DEAD, FINISHED or DISCONNECTED).
 - Each active player gets at most one build action per BUILD phase, so adds
   at most one item per round.
+- Players meet in rooms (`/r/CODE`, listed in the lobby at `/`). Each room
+  has its own level, seats and game; at most four players a room, one per
+  character. Anyone else in the room watches (decided by the human,
+  2026-10-13; `docs/decisions/0002-rooms-and-seats.md`).
+- A dropped connection keeps its seat, character and points for a while; it
+  never holds a round for longer than a short reconnect grace.
 - A game is played on one level by at most four players and ends at the
   end of the round in which someone reaches 4 points, or after six rounds;
   then everyone votes to archive the level (keep building on it next game)
@@ -81,8 +87,9 @@ Movement and authority:
 
 Scope and course:
 
-- No chat, accounts, profiles, XP, all-time leaderboards, matchmaking, stores,
-  rooms or AI features.
+- No chat, accounts, profiles, XP, all-time leaderboards, matchmaking, stores
+  or AI features. Rooms exist only to seat four at a time: no room names,
+  passwords, owners or settings.
 - `/readme/` must publish the README in full, rendered on the server.
 - Leave the course-fixed settings in `fly.toml`, the `/data` volume and the
   shipped `spec/invariants.test.ts` as they are.

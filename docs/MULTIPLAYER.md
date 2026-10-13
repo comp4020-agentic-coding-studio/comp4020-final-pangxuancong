@@ -5,15 +5,25 @@ feeling help or sabotage at once, sharing one persistent course. No chat.
 
 ## Identity
 
-No authentication. A `playerId` (random UUID in sessionStorage, so a refresh
-keeps it but two tabs are two players) and a light pseudonym (Quiet Fox, Blue
-Moth, Paper Crow). Players are visually distinguishable by a colour accent.
-Collect nothing personal.
+No authentication. A `playerId` per room (a random UUID kept in
+sessionStorage and localStorage under the room's code), so a refresh, or
+closing the tab and opening the room again, is the same player; a second tab
+open in the same room at the same time is someone new (a heartbeat in
+localStorage tells them apart). A player's name is their character; without
+one they are a Visitor. Collect nothing personal.
+
+## Rooms
+
+A room is a code and a URL, `/r/CODE`. The lobby at `/` lists rooms with
+someone in them in the last 30 minutes (`GET /api/rooms`), makes one
+(`POST /api/rooms`), or opens a code typed in. A room's level persists in
+SQLite (`level.room`); a link to a room that once existed still opens it. A
+socket names its room in the handshake and only ever hears that room.
 
 ## Round roster
 
-Open during BUILD, closed from COUNTDOWN; later joiners spectate until the
-next BUILD (`docs/GAME_LOOP.md`).
+Seats are the four characters; open during BUILD, closed from COUNTDOWN
+(`docs/GAME_LOOP.md`).
 
 ## BUILD
 
@@ -59,6 +69,10 @@ longer blocks completion. Their placed items stay in the level.
 ## Reconnect
 
 A reconnect receives a canonical snapshot (phase, round, level items, active
-players, statuses, build states) and discards stale local state. Mid-round it
-joins as a spectator until the next BUILD unless the server explicitly
-restores it. Prefer simple, reliable behaviour.
+players, statuses, build states) and discards stale local state. Socket.IO
+reconnects by itself; the server keeps a dropped seated player for the
+reconnect grace (8 s, the round waits) and the seat hold (2 min, the seat
+waits), so a wifi blip costs nothing and a closed laptop costs one round at
+most. A runner who drops mid-run loses that run (the local simulation cannot
+be resumed); in BUILD they can still place. Prefer simple, reliable
+behaviour.

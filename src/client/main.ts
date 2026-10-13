@@ -11,14 +11,57 @@ import { LevelScene } from "./scene.ts";
 import { bus, emptySelection, iCanBuild, store } from "./state.ts";
 import { PIECES, buildTray, buttons, onVote, render, renderPhase, say, snapshotArrived } from "./ui.ts";
 
-// One player per tab: a refresh keeps who you are, a second tab is someone new
-// (docs/MULTIPLAYER.md).
-const KEY = "chain-reaction-player";
-const saved = JSON.parse(sessionStorage.getItem(KEY) ?? "null") as { id: string; name: string } | null;
+// The room is in the URL: /r/CODE.
+const room = location.pathname.match(/^\/r\/([A-Za-z0-9]{4,8})\/?$/)?.[1]?.toUpperCase() ?? "";
+if (!room) location.replace("/");
+
+// Who you are in this room survives a refresh and closing the tab, so coming
+// back within the seat hold gets your seat and points back. A second tab
+// already open in the same room is someone new (docs/MULTIPLAYER.md).
+const KEY = `chain-reaction-player:${room}`;
+const OPEN = `chain-reaction-open:${room}`;
+const stored = (k: Storage, key: string): { id: string; name: string } | null => {
+  try {
+    return JSON.parse(k.getItem(key) ?? "null");
+  } catch {
+    return null;
+  }
+};
+// this tab's own identity first (a refresh); otherwise the room's last one,
+// unless another tab is using it right now
+let saved = stored(sessionStorage, KEY);
+if (!saved) {
+  const last = stored(localStorage, KEY);
+  const openAt = Number(localStorage.getItem(`${OPEN}:${last?.id}`) ?? 0);
+  if (last && Date.now() - openAt > 4000) saved = last;
+}
 const playerId = saved?.id ?? crypto.randomUUID();
 store.me = playerId;
+const remember = (name: string): void => {
+  try {
+    const v = JSON.stringify({ id: playerId, name });
+    sessionStorage.setItem(KEY, v);
+    localStorage.setItem(KEY, v);
+  } catch {
+    // private windows may refuse; this tab still works
+  }
+};
+remember(saved?.name ?? "");
+// a heartbeat, so another tab can tell this identity is in use
+const beat = (): void => {
+  try {
+    localStorage.setItem(`${OPEN}:${playerId}`, String(Date.now()));
+  } catch {}
+};
+beat();
+setInterval(beat, 1500);
+addEventListener("pagehide", () => {
+  try {
+    localStorage.removeItem(`${OPEN}:${playerId}`);
+  } catch {}
+});
 
-const socket: Socket<ServerToClient, ClientToServer> = io({ auth: { playerId, name: saved?.name ?? "" } });
+const socket: Socket<ServerToClient, ClientToServer> = io({ auth: { playerId, name: saved?.name ?? "", room } });
 
 const scene = new LevelScene();
 let sceneReady = false;
@@ -47,7 +90,10 @@ socket.on("snapshot", (snap) => {
   store.snap = snap;
   snapshotArrived();
   const me = snap.players.find((p) => p.id === playerId);
-  if (me && saved?.name !== me.name) sessionStorage.setItem(KEY, JSON.stringify({ id: playerId, name: me.name }));
+  if (me && saved?.name !== me.name) {
+    saved = { id: playerId, name: me.name };
+    remember(me.name);
+  }
   if (before?.phase !== snap.phase || before?.levelId !== snap.levelId) {
     store.sel = emptySelection();
     store.previews.clear();
@@ -71,7 +117,13 @@ socket.on("run:pose", (p) => {
   if (sceneReady) scene.onRemotePose(p.playerId, p.x, p.y, p.vx, p.vy, p.facing);
 });
 
-socket.on("disconnect", () => say("Lost the connection. Reconnecting…", true));
+socket.on("room:missing", () => {
+  say(`There is no room ${room}. Back to the lobby…`, true);
+  setTimeout(() => location.replace("/"), 1500);
+});
+socket.on("disconnect", (reason) => {
+  if (reason !== "io server disconnect") say("Lost the connection. Reconnecting… your seat is kept for two minutes.", true);
+});
 socket.io.on("reconnect", () => say(""));
 
 // ---------- to the server ----------
@@ -98,6 +150,7 @@ bus.selectionChanged = () => {
   render();
 };
 bus.pose = (p) => socket.volatile.emit("run:pose", p);
+bus.pick = (layout) => socket.emit("level:pick", layout);
 bus.result = (r) => socket.emit("run:result", r);
 bus.say = say;
 
@@ -163,7 +216,7 @@ function skip(): void {
 }
 
 buildTray(choose);
-onVote((v) => socket.emit("level:vote", v), (n) => socket.emit("level:pick", n));
+onVote((v) => socket.emit("level:vote", v), (c) => (c === null ? socket.emit("seat:leave") : socket.emit("seat:claim", c)));
 buttons.rotate.addEventListener("click", rotate);
 buttons.cancel.addEventListener("click", cancel);
 buttons.skip.addEventListener("click", skip);

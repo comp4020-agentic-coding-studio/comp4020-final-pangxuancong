@@ -26,7 +26,7 @@ also a player, and holds BUILD until they act or the AFK limit passes.
 | Id | Check | Protects | Status |
 |---|---|---|---|
 | S0 | `/` answers; `/readme/` has every README heading | course invariants | `spec/invariants.test.ts` (shipped, keep) |
-| S1 | a committed Platform is in the level state (`/api/level`), not just a socket message | the level outlives sessions (P7) | `spec/realtime.test.ts` |
+| S1 | a committed Platform is in the room's level state (`/api/rooms/:code/level`), not just a socket message | the level outlives sessions (P7) | `spec/realtime.test.ts` |
 | S2 | client A commits an item; client B receives it without reload, within ~1 s. Committed state only, not drag previews | changes are shared (P8) | `spec/realtime.test.ts` |
 | S3 | two active players: A places, B skips → BUILD ends. A WAITING player holds BUILD; a DISCONNECTED one does not | everyone changes the level; rounds progress (P1) | `spec/rounds.test.ts` (+ one build action, AFK timeouts, empty roster, late joiners) |
 | S4 | A FINISHED + B DEAD → next BUILD; A FINISHED + B RUNNING → still RUN | rounds progress without timers | `spec/rounds.test.ts` (+ run idle limit, six rounds then a fresh level) |
@@ -38,13 +38,16 @@ also a player, and holds BUILD until they act or the AFK limit passes.
 | S8 | after round 6: majority vote, tie or timeout archives; archive copies the items into the next game, restart starts bare | a finished level can live on | `spec/rounds.test.ts` (vote); copy checked in the browser (2026-10-06) |
 | — | a moving platform's velocity is the derivative of its offset, and its top speed stays under 2 cells a second | readable, frame-rate independent motion | `spec/level.test.ts` |
 | S10 | every course: zones clear of blocks and fixtures, and a coarse grid search reaches GOAL from START on the bare course; a wall course fails | each course starts finishable | `spec/levels.test.ts` |
-| S11 | SELECT: most picks wins, tie goes lower, everyone picked closes early; seated players keep their character | choosing a level | `spec/rounds.test.ts` |
-| S9 | a fifth player spectates and takes a free seat at the next BUILD | small rooms (P10) | `spec/rounds.test.ts` |
+| S11 | SELECT: only seated players vote; one map wins outright after the 2 s lock or the 30 s clock; a split goes to DRAW, weighted by votes (3:1 is 75%:25%); swapping or leaving a seat only while choosing | choosing a map | `spec/rounds.test.ts` |
+| S9 | four characters are four seats; a fifth person watches; a seat is taken only by choosing a free character, plays at once in an open BUILD | small rooms (P10) | `spec/rounds.test.ts`; four seats and a watcher over sockets in `spec/realtime.test.ts` |
+| S12 | a dropped player holds BUILD and RUN only for the reconnect grace; keeps seat, character and place for the seat hold; back in BUILD, still builds | nobody holds the round, nobody loses their seat to a blip | `spec/rounds.test.ts`; over sockets in `spec/realtime.test.ts` |
+| S13 | rooms are apart (seats, players); a room that never existed is refused; the lobby lists rooms with seats and watchers | rooms | `spec/realtime.test.ts` |
 | — | wall jump allowed while touching and within the grace window; kicks away, mostly up when pressing in | forgiving movement (P6) | `spec/level.test.ts` |
 
 S3, S4, S7–S9 test the pure round state machine and scoring with explicit times.
-`spec/realtime.test.ts` connects two real clients and needs the server to
-reach a BUILD within 30 s: run it with nobody else mid-round. Each socket
+`spec/realtime.test.ts` makes its own rooms, so it can run beside people
+playing (it still leaves those rooms in the lobby list for 30 minutes, so
+keep it off the live site). Each socket
 receives a broadcast on its own, so over a real network one client's copy can
 land after the other's: wait for every state a test asserts, never assert a
 second client's view straight after the first one's arrived (2026-10-13). Persistence

@@ -5,7 +5,9 @@
      and "Consequences" is a starting point: rewrite it in your own words,
      because the pod will argue for an option you did not pick. -->
 
-- Status: accepted (in the code since the first playable build, 2026-10-06)
+- Status: accepted (in the code since the first playable build, 2026-10-06);
+  refined by [0002](0002-rooms-and-seats.md): a dropped player now holds the
+  round for an 8 s grace and keeps their seat for 2 minutes
 - Applies to: `src/shared/rounds.ts`, `src/server/game.ts`
 
 ## Context

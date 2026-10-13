@@ -2,8 +2,9 @@
 
 ## Current milestone
 
-Crit 08: proof of life. Cutoff Wed 2026-10-07 12:00. The deployed app is the
-crit 8 machine and stays that way until the cutoff state is preserved.
+Crit 09: all at once. Cutoff Wed 2026-10-14 12:00. Shipped and deployed
+2026-10-13 (`eb0bb85`). Work after that (rooms, below) is committed locally
+and not pushed, by the human's instruction.
 
 ## Product direction
 
@@ -34,6 +35,14 @@ Design rules, detailed in `docs/`:
 
 Playable build-and-run platformer, pushed and deployed to Fly on 2026-10-13
 (the crit 8 machine stays in Git history under tag `crit-8`).
+
+- Rooms (local, not yet deployed; 2026-10-13): the lobby at `/` lists rooms,
+  makes one, or opens a code; a room is `/r/CODE`, with its own level, game
+  and four seats. Seats are the four characters, chosen on entry. Before a
+  game seated players walk a lobby room and stand under a map sign to vote;
+  a split vote is a weighted draw with an animation. A dropped connection
+  holds the round 8 s and keeps seat, character and points 2 minutes
+  (`docs/decisions/0002-rooms-and-seats.md`).
 
 - Layout after the human's reference sheet: Parts Tray (left), the level in a
   wooden display box (middle), round panel with players, status and scores

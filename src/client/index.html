@@ -5,55 +5,39 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Chain Reaction</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <main class="desk">
+    <main class="desk lobby">
       <header>
         <div>
           <h1>Chain Reaction</h1>
           <p class="tagline">Build the level together. Survive what you built.</p>
         </div>
-        <p class="aside"><span id="where"></span></p>
       </header>
 
-      <div class="table">
-        <aside class="panel tray-panel" aria-label="Parts tray">
-          <h2 class="band">Parts tray</h2>
-          <div id="tray" class="tray" role="toolbar" aria-label="Pieces"></div>
-          <div id="actions" class="actions">
-            <button id="commit" type="button" class="primary" title="Enter">Place</button>
-            <div class="row">
-              <button id="rotate" type="button" class="quiet" title="Turn (R)">Turn</button>
-              <button id="cancel" type="button" class="quiet" title="Cancel (Esc)">Cancel</button>
-            </div>
-            <button id="skip" type="button" class="quiet">Skip this build</button>
-          </div>
-        </aside>
-
-        <div class="stage">
-          <div id="game" class="game"></div>
-          <div id="overlay" class="overlay" hidden></div>
+      <section class="panel rooms-panel" aria-labelledby="rooms-title">
+        <h2 class="band" id="rooms-title">Rooms</h2>
+        <p class="lead">Up to four players a room, each as one of four characters. Anyone else watches and takes a seat when one frees up. Each room keeps its own level.</p>
+        <div class="row">
+          <button id="new-room" type="button" class="primary">New room</button>
+          <form id="join-form" class="join">
+            <label for="code">Room code</label>
+            <input id="code" name="code" autocomplete="off" spellcheck="false" maxlength="8" placeholder="ABCD" />
+            <button type="submit" class="quiet">Join</button>
+          </form>
         </div>
+        <p id="lobby-message" class="message" aria-live="polite"></p>
+        <ul id="rooms" class="rooms" aria-live="polite"></ul>
+      </section>
 
-        <aside class="panel round-panel" aria-label="This round">
-          <p class="round" id="round">Round –</p>
-          <p class="pill" id="pill">Connecting</p>
-          <ul id="roster" class="roster" aria-label="Players"></ul>
-          <p id="guide" class="guide" role="status" aria-live="polite"></p>
-        </aside>
-      </div>
-
-      <p id="message" class="message" aria-live="polite"></p>
-
-      <ol id="steps" class="steps" aria-label="How a round works">
-        <li data-step="BUILD"><span class="n">1</span><b>Build</b>Everyone gets one piece, a bomb, or a skip.</li>
-        <li data-step="COUNTDOWN"><span class="n">2</span><b>Ready</b>When everyone has built, a short countdown.</li>
-        <li data-step="RUN"><span class="n">3</span><b>Run</b>All at once to the flag. +1 for making it, +0.2 when your trap gets someone. If everyone makes it (two or more), nobody scores.</li>
-        <li data-step="RESULTS"><span class="n">4</span><b>Round end</b>The level stays. First to 4 points, or six rounds; then keep it or start bare.</li>
+      <ol class="steps" aria-label="How a game works">
+        <li><span class="n">1</span><b>Pick</b>Choose a character, then stand under the map you want. Split votes are drawn by lot.</li>
+        <li><span class="n">2</span><b>Build</b>Everyone gets one piece, a bomb, or a skip.</li>
+        <li><span class="n">3</span><b>Run</b>All at once to the flag. +1 for making it, +0.2 when your trap gets someone.</li>
+        <li><span class="n">4</span><b>Again</b>The level stays. First to 4 points, or six rounds.</li>
       </ol>
-      <p id="help" class="help"></p>
     </main>
-    <script type="module" src="./main.ts"></script>
+    <script type="module" src="/lobby.ts"></script>
   </body>
 </html>

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en-AU">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Chain Reaction</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="desk">
+      <header>
+        <div>
+          <h1>Chain Reaction</h1>
+          <p class="tagline">Build the level together. Survive what you built.</p>
+        </div>
+        <p class="aside"><span id="where"></span></p>
+      </header>
+
+      <div class="table">
+        <aside class="panel tray-panel" aria-label="Parts tray">
+          <h2 class="band">Parts tray</h2>
+          <div id="tray" class="tray" role="toolbar" aria-label="Pieces"></div>
+          <div id="actions" class="actions">
+            <button id="commit" type="button" class="primary" title="Enter">Place</button>
+            <div class="row">
+              <button id="rotate" type="button" class="quiet" title="Turn (R)">Turn</button>
+              <button id="cancel" type="button" class="quiet" title="Cancel (Esc)">Cancel</button>
+            </div>
+            <button id="skip" type="button" class="quiet">Skip this build</button>
+          </div>
+        </aside>
+
+        <div class="stage">
+          <div id="game" class="game"></div>
+          <div id="overlay" class="overlay" hidden></div>
+        </div>
+
+        <aside class="panel round-panel" aria-label="This round">
+          <p class="round" id="round">Round –</p>
+          <p class="pill" id="pill">Connecting</p>
+          <ul id="roster" class="roster" aria-label="Players"></ul>
+          <p id="guide" class="guide" role="status" aria-live="polite"></p>
+        </aside>
+      </div>
+
+      <p id="message" class="message" aria-live="polite"></p>
+
+      <ol id="steps" class="steps" aria-label="How a round works">
+        <li data-step="BUILD"><span class="n">1</span><b>Build</b>Everyone gets one piece, a bomb, or a skip.</li>
+        <li data-step="COUNTDOWN"><span class="n">2</span><b>Ready</b>When everyone has built, a short countdown.</li>
+        <li data-step="RUN"><span class="n">3</span><b>Run</b>All at once to the flag. +1 for making it, +0.2 when your trap gets someone. If everyone makes it (two or more), nobody scores.</li>
+        <li data-step="RESULTS"><span class="n">4</span><b>Round end</b>The level stays. First to 4 points, or six rounds; then keep it or start bare.</li>
+      </ol>
+      <p id="help" class="help"></p>
+    </main>
+    <script type="module" src="/main.ts"></script>
+  </body>
+</html>

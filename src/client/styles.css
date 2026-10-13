@@ -359,28 +359,90 @@ kbd {
   background: #fffdf8;
 }
 
-/* choosing a level */
-.card.select { min-width: min(46rem, 94%); }
-.levels { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.7rem; margin-top: 0.6rem; }
-.level {
+/* choosing a character: it is your seat */
+.card.heroes { min-width: min(34rem, 94%); }
+.hero-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.6rem; margin-top: 0.7rem; }
+.hero {
   display: grid;
-  gap: 0.25rem;
-  padding: 0.45rem;
+  justify-items: center;
+  gap: 0.2rem;
+  padding: 0.6rem 0.4rem 0.5rem;
   border: 1.5px solid rgba(43, 42, 40, 0.14);
-  border-radius: 10px;
+  border-radius: 12px;
   background: #fffdf8;
   text-transform: none;
   letter-spacing: 0;
   font-weight: 400;
-  text-align: left;
   transition: transform 140ms, border-color 140ms, box-shadow 140ms;
 }
-.level svg { width: 100%; height: auto; border-radius: 6px; box-shadow: inset 0 0 0 1px rgba(43, 42, 40, 0.08); }
-.level:hover { transform: translateY(-2px); box-shadow: 0 6px 14px -10px rgba(43, 42, 40, 0.6); }
-.level[aria-pressed="true"] { border-color: var(--wood-dark); background: #f6e9d6; }
-.level .lname { font-family: var(--serif); font-size: 1rem; color: var(--ink); }
-.level .blurb { font-size: 0.78rem; color: var(--ink-soft); line-height: 1.3; }
-.level .pickers { display: flex; gap: 0.15rem; min-height: 1.5rem; }
+.hero .portrait .head { width: 3.2rem; height: 3.2rem; }
+.hero .portrait svg { width: 100%; height: 100%; }
+.hero .hname { font: 500 1rem var(--serif); color: var(--ink); }
+.hero .hstate { font-size: 0.74rem; color: var(--ink-soft); }
+.hero:hover:not(:disabled) { transform: translateY(-3px); border-color: var(--c); box-shadow: 0 8px 16px -10px var(--c); }
+.hero:disabled { opacity: 0.45; cursor: not-allowed; }
+button.link { margin-left: 0.4rem; padding: 0; border: 0; background: none; color: var(--ink-soft); font: inherit; font-size: 0.8rem; text-decoration: underline; text-transform: none; letter-spacing: 0; cursor: pointer; }
+.seat-picks { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.35rem; }
+.seat-pick { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.15rem 0.45rem 0.15rem 0.2rem; font-size: 0.75rem; text-transform: none; letter-spacing: 0; }
+.aside .copy { margin-left: 0.2rem; padding: 0.05rem 0.45rem; font-size: 0.72rem; text-transform: none; letter-spacing: 0; }
+
+/* a split vote: the maps as a strip, each as wide as its votes */
+.card.draw { min-width: min(34rem, 94%); }
+.wheel { position: relative; margin: 0.9rem 0 0.4rem; padding-top: 0.9rem; }
+.slices { display: flex; list-style: none; margin: 0; padding: 0; border-radius: 10px; overflow: hidden; box-shadow: inset 0 0 0 1.5px rgba(107, 71, 40, 0.35); }
+.slices li {
+  display: grid;
+  gap: 0.05rem;
+  padding: 0.55rem 0.3rem;
+  background: #f1e5d1;
+  border-right: 1.5px dashed rgba(107, 71, 40, 0.35);
+  transition: background 120ms, transform 200ms;
+}
+.slices li:nth-child(2) { background: #e9dcc3; }
+.slices li:nth-child(3) { background: #f6ecda; }
+.slices li:last-child { border-right: 0; }
+.slices b { font: 500 1rem var(--serif); color: var(--ink); }
+.slices span { font-size: 0.74rem; color: var(--ink-soft); }
+.slices em { font: 700 0.95rem var(--serif); font-style: normal; color: var(--wood-deep); }
+.slices li.lit { background: #f7dfa8; }
+.slices li.won { background: #f3cf7e; box-shadow: inset 0 0 0 2px var(--brass); }
+.needle { position: absolute; top: 0; left: 0; width: 0; height: 0; margin-left: -9px; border: 9px solid transparent; border-top: 13px solid var(--red); border-bottom: 0; filter: drop-shadow(0 2px 1px rgba(43, 42, 40, 0.3)); }
+.drawn { min-height: 1.6em; font: 500 1.25rem var(--serif); color: var(--ink) !important; }
+
+/* the lobby page: rooms */
+.lobby { max-width: 54rem; }
+.rooms-panel .lead { margin: 0 0 0.7rem; color: var(--ink-soft); font-size: 0.92rem; }
+.rooms-panel .row { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; }
+.rooms-panel .primary { padding: 0.55rem 1.1rem; }
+.join { display: flex; gap: 0.4rem; align-items: center; }
+.join label { font-size: 0.85rem; color: var(--ink-soft); }
+.join input { width: 6.5rem; padding: 0.42rem 0.5rem; border: 1px solid rgba(43, 42, 40, 0.3); border-radius: 8px; background: #fffdf8; font: 600 1rem var(--sans); letter-spacing: 0.12em; text-transform: uppercase; }
+.rooms { list-style: none; margin: 0.4rem 0 0; padding: 0; display: grid; gap: 0.45rem; }
+.rooms a {
+  display: grid;
+  grid-template-columns: 4.2rem 5rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.55rem 0.8rem;
+  border: 1px solid rgba(143, 99, 57, 0.2);
+  border-radius: 10px;
+  background: #fffdf8;
+  text-decoration: none;
+  transition: transform 140ms, box-shadow 140ms;
+}
+.rooms a:hover { transform: translateY(-2px); box-shadow: 0 8px 16px -12px rgba(43, 42, 40, 0.6); }
+.rooms .code { font: 700 1.05rem var(--sans); letter-spacing: 0.12em; }
+.rooms .seats { display: flex; gap: 0.25rem; }
+.rooms .seats i { width: 0.8rem; height: 0.8rem; border-radius: 50%; border: 1.5px solid var(--c); }
+.rooms .seats i.taken { background: var(--c); }
+.rooms .what { font-size: 0.85rem; color: var(--ink-soft); }
+.rooms .go { font: 600 0.8rem var(--sans); text-transform: uppercase; letter-spacing: 0.06em; }
+.rooms .empty { padding: 0.8rem; color: var(--ink-soft); font-size: 0.9rem; text-align: center; }
+@media (max-width: 640px) {
+  .rooms a { grid-template-columns: 4rem minmax(0, 1fr) auto; }
+  .rooms .seats { display: none; }
+  .hero-row { grid-template-columns: repeat(2, 1fr); }
+}
 
 /* the final table: rows arrive from last place to first */
 .card.final { min-width: min(30rem, 92%); }
@@ -410,7 +472,6 @@ kbd {
 .card.final.ready .vote, .card.final.ready .tally { opacity: 1; pointer-events: auto; }
 
 @media (max-width: 1100px) {
-  .levels { grid-template-columns: 1fr; }
   .table { grid-template-columns: 1fr; }
   .stage { order: -1; }
   .tray { grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); }
@@ -419,7 +480,7 @@ kbd {
 }
 @media (prefers-reduced-motion: reduce) {
   .count { animation: none; }
-  .piece, .steps li, .board .row, .board .bar span, .card.round, .track .now, .track-row .gain { transition: none; }
+  .piece, .steps li, .board .row, .board .bar span, .card.round, .track .now, .track-row .gain, .hero, .rooms a, .slices li { transition: none; }
   .stamp { animation: none; opacity: 0; }
   .card.round.simple .body { animation: none; }
 }

@@ -2,8 +2,8 @@
 // status and score, one line of guidance), the four-step strip, and the cards
 // that sit over the level between runs (docs/ART_DIRECTION.md).
 import { CHARACTERS } from "../shared/characters.ts";
-import { CELL, HEIGHT, WIDTH, type BuildChoice, footprint } from "../shared/level.ts";
-import { LEVELS, type LevelDef, levelById } from "../shared/levels.ts";
+import type { BuildChoice } from "../shared/level.ts";
+import { levelById } from "../shared/levels.ts";
 import type { PlayerView, Snapshot } from "../shared/protocol.ts";
 import type { Vote } from "../shared/rounds.ts";
 import { iCanBuild, myPlayer, store } from "./state.ts";
@@ -59,28 +59,6 @@ export const head = (character: number | null, colour = "#9a948a"): string =>
     ? `<span class="head"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6" fill="${colour}"/></svg></span>`
     : `<span class="head" title="${CHARACTERS[character].name}"><svg viewBox="0 0 24 24" aria-hidden="true">${HEADS[character]}</svg></span>`;
 
-// A map of a course, drawn from its data so it always matches what you get.
-export function courseMap(level: LevelDef): string {
-  const parts: string[] = [];
-  for (const b of level.blocks) {
-    const x = b.col * CELL, y = b.row * CELL, w = b.w * CELL, h = b.style === "shelf" || b.style === "peg" ? 20 : b.h * CELL;
-    const fill = b.style === "post" ? "#8d9194" : b.style === "floor" ? "#b8834f" : "#c08c58";
-    parts.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="4" fill="${fill}"/>`);
-  }
-  for (const f of level.fixtures) {
-    const fp = footprint(f);
-    const x = fp.col * CELL, y = fp.row * CELL;
-    if (f.type === "spike") parts.push(`<path d="M${x + 4} ${y + 40} L${x + 20} ${y + 12} L${x + 36} ${y + 40} Z" fill="#b24a3e"/>`);
-    else if (f.type === "fan") parts.push(`<circle cx="${x + 20}" cy="${y + 20}" r="16" fill="#5f87b0"/><path d="M${x + 44} ${y + 20} h60" stroke="#5f87b0" stroke-width="6" stroke-dasharray="14 10" opacity=".6"/>`);
-    else if (f.type === "moving" && f.rot) parts.push(`<rect x="${x}" y="${y + 60}" width="80" height="18" rx="4" fill="#6f8f5c"/><path d="M${x + 40} ${y + 10} V${y + fp.h * CELL - 10}" stroke="#6f8f5c" stroke-width="4" opacity=".6"/>`);
-    else if (f.type === "moving") parts.push(`<rect x="${x + 60}" y="${y}" width="80" height="18" rx="4" fill="#6f8f5c"/><path d="M${x + 10} ${y + 30} H${x + fp.w * CELL - 10}" stroke="#6f8f5c" stroke-width="4" opacity=".6"/>`);
-  }
-  const { spawn, flag } = level;
-  parts.push(`<rect x="${spawn.x - 24}" y="${spawn.y - 56}" width="48" height="56" rx="6" fill="#6f8f5c" opacity=".35"/>`);
-  parts.push(`<path d="M${flag.x} ${flag.y} V${flag.y - 96}" stroke="#c9a03d" stroke-width="7"/><path d="M${flag.x} ${flag.y - 96} l50 18 l-50 18 z" fill="#b24a3e"/>`);
-  return `<svg viewBox="0 0 ${WIDTH} ${HEIGHT}" aria-hidden="true"><rect width="${WIDTH}" height="${HEIGHT}" fill="#faf6ee"/>${parts.join("")}</svg>`;
-}
-
 let receivedAt = 0;
 export const snapshotArrived = (): void => {
   receivedAt = performance.now();
@@ -100,8 +78,12 @@ export function buildTray(onChoose: (c: BuildChoice) => void): void {
 
 // what to say about each player now, and whether it is settled
 function status(p: PlayerView, snap: Snapshot): { text: string; cls: string } {
-  if (snap.phase === "SELECT") return p.pick ? { text: `picked level ${p.pick}`, cls: "ok" } : { text: "choosing…", cls: "wait" };
-  if (!p.active) return { text: "watching", cls: "" };
+  if (!p.connected && p.character !== null) return { text: "reconnecting…", cls: "out" };
+  if (snap.phase === "SELECT" || snap.phase === "DRAW") {
+    if (p.character === null) return { text: "watching", cls: "" };
+    return p.pick ? { text: `map ${p.pick}`, cls: "ok" } : { text: "choosing…", cls: "wait" };
+  }
+  if (!p.active) return { text: p.character === null ? "watching" : "next build", cls: "" };
   switch (snap.phase) {
     case "BUILD":
       return { WAITING: { text: "placing…", cls: "wait" }, PLACED: { text: "placed", cls: "ok" }, SKIPPED: { text: "skipped", cls: "ok" }, DISCONNECTED: { text: "away", cls: "out" } }[p.build];
@@ -120,15 +102,16 @@ const names = (ps: PlayerView[]): string => {
 };
 const pts = (n: number): string => (Number.isInteger(n) ? String(n) : n.toFixed(1));
 
-const PHASE_NAMES: Record<string, string> = { SELECT: "Choose a level", BUILD: "Build phase", COUNTDOWN: "Get ready", RUN: "Run phase", RESULTS: "Round end", LEVEL_END: "Game over" };
+const PHASE_NAMES: Record<string, string> = { SELECT: "Choose a map", DRAW: "Drawing a map", BUILD: "Build phase", COUNTDOWN: "Get ready", RUN: "Run phase", RESULTS: "Round end", LEVEL_END: "Game over" };
 
 export function render(): void {
   const snap = store.snap;
   if (!snap) return;
   const course = levelById(snap.layout);
-  el.where.textContent = snap.phase === "SELECT" ? "Choosing a level"
-    : `Level ${course.id}: ${course.name} · game ${snap.levelId}${snap.archivedFrom ? `, built on game ${snap.archivedFrom}` : ""}`;
-  el.round.textContent = snap.phase === "SELECT" ? "New game" : snap.phase === "LEVEL_END" ? "Game over" : `Round ${snap.round} of ${snap.maxRounds}`;
+  const choosing = snap.phase === "SELECT" || snap.phase === "DRAW";
+  el.where.innerHTML = `Room <b>${snap.room}</b> <button type="button" class="copy" id="copy-link" title="Copy this room's link">Copy link</button> · <a href="/">Lobby</a>`
+    + (choosing ? "" : ` · Level ${course.id}: ${course.name} · game ${snap.levelId}${snap.archivedFrom ? `, built on game ${snap.archivedFrom}` : ""}`);
+  el.round.textContent = choosing ? "New game" : snap.phase === "LEVEL_END" ? "Game over" : `Round ${snap.round} of ${snap.maxRounds}`;
   el.pill.textContent = PHASE_NAMES[snap.phase];
   el.pill.className = `pill ${snap.phase === "RUN" || snap.phase === "COUNTDOWN" ? "run" : snap.phase === "BUILD" ? "" : "end"}`;
 
@@ -136,13 +119,13 @@ export function render(): void {
   el.roster.innerHTML = players
     .map((p) => {
       const s = status(p, snap);
-      return `<li class="${p.id === store.me ? "me" : ""} ${p.active || snap.phase === "SELECT" ? "" : "watching"}">${head(p.character, p.colour)}<span class="name">${escape(p.name)}${p.id === store.me ? " (you)" : ""}</span><span class="pts" title="points this game">${pts(p.points)}</span><span class="state ${s.cls}">${s.text}</span></li>`;
+      return `<li class="${p.id === store.me ? "me" : ""} ${p.active || (choosing && p.character !== null) ? "" : "watching"}">${head(p.character, p.colour)}<span class="name">${escape(p.name)}${p.id === store.me ? " (you)" : ""}</span><span class="pts" title="points this game">${pts(p.points)}</span><span class="state ${s.cls}">${s.text}</span></li>`;
     })
     .join("");
 
   for (const li of el.steps.querySelectorAll<HTMLElement>("li")) {
     const step = li.dataset.step;
-    li.classList.toggle("now", step === snap.phase || (step === "RESULTS" && snap.phase === "LEVEL_END") || (step === "BUILD" && snap.phase === "SELECT"));
+    li.classList.toggle("now", step === snap.phase || (step === "RESULTS" && snap.phase === "LEVEL_END") || (step === "BUILD" && choosing));
   }
 
   const building = iCanBuild();
@@ -161,7 +144,9 @@ export function render(): void {
   el.commit.disabled = !building || (bomb ? !sel.target : !sel.pinned);
 
   el.help.innerHTML =
-    snap.phase === "BUILD"
+    choosing && myPlayer()?.character != null
+      ? `<kbd>←</kbd> <kbd>→</kbd> or <kbd>A</kbd> <kbd>D</kbd> to walk · <kbd>↑</kbd> <kbd>W</kbd> or <kbd>Space</kbd> to jump · stand under a sign to vote for that map`
+      : snap.phase === "BUILD"
       ? `Choose a piece (<kbd>1</kbd>–<kbd>7</kbd>), click the level to put it there, <kbd>Enter</kbd> to place. <kbd>R</kbd> turns it, <kbd>Esc</kbd> cancels. Pieces are permanent once placed. Look around: scroll to zoom, drag with the right button, or <kbd>←</kbd><kbd>↑</kbd><kbd>→</kbd><kbd>↓</kbd>.`
       : snap.phase === "RUN" && snap.players.find((p) => p.id === store.me)?.run !== "RUNNING"
         ? `Watching the others: <kbd>E</kbd> for the next runner, or click a badge on the edge · arrows, right drag or the wheel to look around yourself`
@@ -185,13 +170,39 @@ export function renderPhase(): void {
   switch (snap.phase) {
     case "SELECT": {
       const left = remaining(snap.phaseRemainingMs);
-      guide = "Choose the course for this game. When everyone has picked, the most picked wins; a tie goes to the lower level.";
-      const cards = LEVELS.map((l) => {
-        const pickers = snap.players.filter((p) => p.pick === l.id).map((p) => head(p.character, p.colour)).join("");
-        return `<button type="button" class="level" data-pick="${l.id}">${courseMap(l)}<span class="lname">Level ${l.id} · ${l.name}</span><span class="blurb">${l.blurb}</span><span class="pickers">${pickers}</span></button>`;
-      }).join("");
-      overlay = `<div class="card select"><h2>Choose a level</h2><div class="levels">${cards}</div><p class="tally"></p></div>`;
-      tally = left === null ? "Waiting for the first pick" : `Starting in ${Math.ceil(left / 1000)} s, or when everyone has picked`;
+      const seated = snap.players.filter((p) => p.character !== null && p.connected);
+      const voted = seated.filter((p) => p.pick !== null);
+      if (me?.character == null) {
+        // first, a character: taking one is taking a seat
+        const taken = new Map(snap.players.filter((p) => p.character !== null).map((p) => [p.character!, p]));
+        const cards = CHARACTERS.map((c, i) => {
+          const holder = taken.get(i);
+          return `<button type="button" class="hero" data-seat="${i}" style="--c:${c.colour}" ${holder ? "disabled" : ""}>
+            <span class="portrait">${head(i, c.colour)}</span><span class="hname">${c.name}</span>
+            <span class="hstate">${holder ? (holder.connected ? "taken" : "held for a returning player") : "free"}</span></button>`;
+        }).join("");
+        const full = taken.size >= CHARACTERS.length;
+        overlay = `<div class="card heroes"><h2>Choose your character</h2>
+          <p>${full ? "All four seats are taken. You're watching; a seat frees up when someone leaves for good." : "Your character is your seat in this room. Then walk to the map you want."}</p>
+          <div class="hero-row">${cards}</div></div>`;
+        guide = full ? `The room is full (${snap.maxPlayers} players). You're watching.` : "Choose a character to take a seat.";
+      } else {
+        guide = `Walk under the sign of the map you want. ${voted.length} of ${seated.length} ${seated.length === 1 ? "has" : "have"} chosen.`
+          + `<button type="button" class="link" data-seat="-1">Give up my seat</button>`;
+      }
+      if (left !== null) guide += `<span class="deadline">${voted.length === seated.length && seated.length > 0 ? "Everyone has chosen: starting" : "Starting"} in ${Math.ceil(left / 1000)} s</span>`;
+      break;
+    }
+    case "DRAW": {
+      const draw = snap.draw;
+      if (!draw) break;
+      const total = draw.options.reduce((n, o) => n + o.votes, 0);
+      guide = "The vote was split, so the map is drawn by lot: more votes, more chance.";
+      const slices = draw.options.map((o) => `<li data-layout="${o.layout}" style="flex:${o.votes}"><b>Map ${o.layout}</b><span>${levelById(o.layout).name}</span><em>${Math.round((o.votes / total) * 100)}%</em></li>`).join("");
+      overlay = `<div class="card draw" data-draw="${snap.levelId}:${draw.options.map((o) => o.layout + "x" + o.votes).join(",")}:${draw.result}" data-result="${draw.result}">
+        <h2>Drawing a map</h2><p>${draw.options.map((o) => `${o.votes} for map ${o.layout}`).join(", ")}</p>
+        <div class="wheel"><ol class="slices">${slices}</ol><i class="needle"></i></div>
+        <p class="drawn" aria-live="polite"></p></div>`;
       break;
     }
     case "BUILD": {
@@ -204,8 +215,10 @@ export function renderPhase(): void {
         if (left !== null) guide += `<span class="deadline">Auto-skip in ${Math.ceil(left / 1000)} s</span>`;
       } else if (me?.active) {
         guide = waiting.length ? `Waiting for ${names(waiting)} to build…` : "Starting the run…";
+      } else if (me?.character != null) {
+        guide = "You have a seat. You'll play from the next build.";
       } else {
-        guide = `The game is full (${snap.maxPlayers} players). You're watching, and take a seat when one frees up.`;
+        guide = `You're watching. ${seatPicker(snap)}`;
       }
       break;
     }
@@ -218,7 +231,7 @@ export function renderPhase(): void {
     case "RUN": {
       const running = others.filter((p) => p.run === "RUNNING");
       if (me?.run === "RUNNING") guide = "Run! Reach the flag. +1 if you make it.";
-      else if (!me?.active) guide = "A run is on. You're watching.";
+      else if (!me?.active) guide = me?.character != null ? "A run is on. You'll play from the next build." : `A run is on. You're watching. ${seatPicker(snap)}`;
       else guide = running.length ? `${me.run === "FINISHED" ? "You made it." : "You fell."} Waiting for ${names(running)}…` : "Run over.";
       break;
     }
@@ -285,12 +298,13 @@ export function renderPhase(): void {
     if (final) revealScores(final);
     const round = el.overlay.querySelector<HTMLElement>(".card.round");
     if (round) fillTracks(round, snap.winPoints);
+    const draw = el.overlay.querySelector<HTMLElement>(".card.draw");
+    if (draw) spinDraw(draw, remaining(snap.phaseRemainingMs) ?? 0);
   }
   const t = el.overlay.querySelector(".tally");
   if (t && t.textContent !== tally) t.textContent = tally;
   // my own choice, without rebuilding the card
   for (const b of el.overlay.querySelectorAll<HTMLButtonElement>("[data-vote]")) b.setAttribute("aria-pressed", String(me?.vote === b.dataset.vote));
-  for (const b of el.overlay.querySelectorAll<HTMLButtonElement>("[data-pick]")) b.setAttribute("aria-pressed", String(me?.pick === Number(b.dataset.pick)));
   el.overlay.hidden = overlay === "";
 }
 
@@ -369,12 +383,76 @@ const fmt = (n: number): string => (Number.isInteger(n) ? String(n) : n.toFixed(
 let lastGuide = "";
 let lastOverlay = "";
 
-export function onVote(fn: (v: Vote) => void, onPick: (level: number) => void): void {
-  el.overlay.addEventListener("click", (e) => {
+// For someone watching mid-game: the free characters, as buttons; taking one
+// is taking a seat for the next build (or this one, while it is open).
+function seatPicker(snap: Snapshot): string {
+  const taken = new Set(snap.players.map((p) => p.character));
+  const free = CHARACTERS.map((c, i) => ({ c, i })).filter(({ i }) => !taken.has(i));
+  if (free.length === 0) return `The room is full (${snap.maxPlayers} players); a seat frees up when someone leaves for good.`;
+  return `Take a free seat:<span class="seat-picks">${free.map(({ c, i }) => `<button type="button" class="seat-pick" data-seat="${i}" title="${c.name}">${head(i, c.colour)}${c.name}</button>`).join("")}</span>`;
+}
+
+// The draw: a strip of the maps in the draw, each as wide as its votes. A
+// marker sweeps back and forth across it, slowing, and stops inside the slice
+// the server drew, with time to read the result before the build begins.
+function spinDraw(card: HTMLElement, leftMs: number): void {
+  const strip = card.querySelector<HTMLElement>(".slices")!;
+  const needle = card.querySelector<HTMLElement>(".needle")!;
+  const drawn = card.querySelector<HTMLElement>(".drawn")!;
+  const target = card.querySelector<HTMLElement>(`[data-layout="${card.dataset.result}"]`)!;
+  const land = (): void => {
+    target.classList.add("won");
+    drawn.textContent = `Map ${card.dataset.result}: ${levelById(Number(card.dataset.result)).name}`;
+  };
+  // where the marker stops: somewhere inside the drawn slice, not on its edge
+  const stopAt = (): number => {
+    const w = strip.clientWidth;
+    return (target.offsetLeft + target.offsetWidth * (0.3 + 0.4 * Math.random())) / w;
+  };
+  const spinMs = Math.max(0, leftMs - 1600);
+  if (reducedMotion.matches || spinMs < 300) {
+    needle.style.left = `${stopAt() * 100}%`;
+    land();
+    return;
+  }
+  const end = stopAt();
+  const sweeps = 4 + end; // back and forth across the strip, ending at `end`
+  const start = performance.now();
+  const step = (now: number): void => {
+    const k = Math.min(1, (now - start) / spinMs);
+    const d = sweeps * (1 - (1 - k) ** 3); // eases out
+    const pass = Math.floor(d), frac = d - pass;
+    needle.style.left = `${(pass % 2 === 0 ? frac : 1 - frac) * 100}%`;
+    for (const li of strip.children) {
+      const el = li as HTMLElement;
+      const at = parseFloat(needle.style.left) / 100 * strip.clientWidth;
+      el.classList.toggle("lit", at >= el.offsetLeft && at < el.offsetLeft + el.offsetWidth);
+    }
+    if (k < 1) requestAnimationFrame(step);
+    else land();
+  };
+  requestAnimationFrame(step);
+}
+
+export function onVote(fn: (v: Vote) => void, onSeat: (character: number | null) => void): void {
+  const click = (e: Event): void => {
     const v = (e.target as HTMLElement).closest<HTMLButtonElement>("[data-vote]");
     if (v) fn(v.dataset.vote as Vote);
-    const p = (e.target as HTMLElement).closest<HTMLButtonElement>("[data-pick]");
-    if (p) onPick(Number(p.dataset.pick));
+    const seat = (e.target as HTMLElement).closest<HTMLButtonElement>("[data-seat]");
+    if (seat) onSeat(Number(seat.dataset.seat) < 0 ? null : Number(seat.dataset.seat));
+  };
+  el.overlay.addEventListener("click", click);
+  el.guide.addEventListener("click", click);
+  el.where.addEventListener("click", async (e) => {
+    if (!(e.target as HTMLElement).closest("#copy-link")) return;
+    const b = e.target as HTMLButtonElement;
+    try {
+      await navigator.clipboard.writeText(location.href);
+      b.textContent = "Copied";
+    } catch {
+      b.textContent = location.href;
+    }
+    setTimeout(() => (b.textContent = "Copy link"), 1500);
   });
 }
 

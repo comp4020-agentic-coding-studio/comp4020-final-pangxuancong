@@ -7,7 +7,7 @@ import {
   CELL, COLS, DEATH_Y, FAN_DIRS, HEIGHT, type Item, type PixelRect, type Proposal, ROWS,
   LAUNCH_INTERVAL_MS, SHOT_KNOCKBACK, SHOT_RADIUS, SHOT_SPEED, VIEW_H, VIEW_W, WIDTH, body, muzzle, shotRange, shotsAt, cellToPixels, fanZone, footprint, movingOffset, movingVelocity, placementError,
 } from "../shared/level.ts";
-import { type Block, type LevelDef, levelById } from "../shared/levels.ts";
+import { type Block, LOBBY, LOBBY_COLS, type LevelDef, levelById } from "../shared/levels.ts";
 import { MOVEMENT, type Side, canWallJump, wallJumpVelocity } from "../shared/movement.ts";
 import type { Phase } from "../shared/rounds.ts";
 import { C, type Pose, drawCharacter, drawCourseBlock, drawFanBlades, drawItem, drawMovingPlank, drawShot, drawTravel, hex } from "./draw.ts";
@@ -67,6 +67,8 @@ interface Local {
 }
 
 const inside = (r: PixelRect, x: number, y: number): boolean => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
+// choosing a map happens in the lobby room, walking about
+const inLobby = (phase: Phase | null): boolean => phase === "SELECT" || phase === "DRAW";
 const NAMES: Record<string, string> = { platform: "Platform", spring: "Spring", spike: "Spike", fan: "Fan", moving: "Moving platform", launcher: "Launcher" };
 
 export class LevelScene extends Phaser.Scene {
@@ -109,6 +111,9 @@ export class LevelScene extends Phaser.Scene {
   private spent = new Set<string>(); // shots that hit a player or a moving plank this run
   private lastVolley = new Map<string, number>(); // launcher id: last shot fired, for the puff
   private sparks!: Phaser.GameObjects.Particles.ParticleEmitter;
+  private signCounts = new Map<number, Phaser.GameObjects.Text>(); // lobby: votes under each sign
+  private signGlow: Phaser.GameObjects.Graphics | null = null;
+  private standingUnder: number | null = null; // lobby: the sign my runner stands under
   hoverInfo = "";
   // set by main.ts; called once the scene exists
   onReady = (): void => {};
@@ -197,7 +202,9 @@ export class LevelScene extends Phaser.Scene {
   private lookAtStart(): void {
     const cam = this.cameras.main;
     cam.setZoom(1);
-    cam.centerOn(this.course.spawn.x + VIEW_W / 4, this.course.spawn.y - VIEW_H / 4);
+    // the lobby is a strip along the floor: show all of it
+    if (this.course === LOBBY) cam.centerOn((LOBBY_COLS * CELL) / 2, HEIGHT - VIEW_H / 2);
+    else cam.centerOn(this.course.spawn.x + VIEW_W / 4, this.course.spawn.y - VIEW_H / 4);
   }
 
   // the wheel zooms the free camera, keeping the point under the pointer still
@@ -221,6 +228,13 @@ export class LevelScene extends Phaser.Scene {
     const dx = (k.right.isDown || k.d.isDown ? 1 : 0) - (k.left.isDown || k.a.isDown ? 1 : 0);
     const dy = (k.down.isDown || k.s.isDown ? 1 : 0) - (k.up.isDown || k.w.isDown ? 1 : 0);
     let target: Phaser.GameObjects.Components.Transform | null = null;
+    // the lobby fits the view: the camera stays put while people walk
+    if (inLobby(this.phase)) {
+      if (this.followTarget) cam.stopFollow();
+      this.followTarget = null;
+      this.drawBanner();
+      return;
+    }
     if (this.runningMyself()) target = this.local!.rect;
     else if (this.phase === "RUN") {
       if (Phaser.Input.Keyboard.JustDown(k.e)) this.watchNext();
@@ -252,7 +266,7 @@ export class LevelScene extends Phaser.Scene {
   }
 
   private runningMyself(): boolean {
-    return !!this.local && (this.phase === "COUNTDOWN" || (this.phase === "RUN" && (this.local.live || !!this.local.flung)));
+    return !!this.local && (inLobby(this.phase) || this.phase === "COUNTDOWN" || (this.phase === "RUN" && (this.local.live || !!this.local.flung)));
   }
 
   // Manual camera input. Refused while you run; while watching, it lets go.
@@ -266,10 +280,11 @@ export class LevelScene extends Phaser.Scene {
     return true;
   }
 
-  // other players still running, in roster order, that we can see
+  // other players still running (or walking the lobby), in roster order, that we can see
   private runnersToWatch(): string[] {
+    const lobby = inLobby(this.phase);
     return (store.snap?.players ?? [])
-      .filter((p) => p.id !== store.me && p.active && p.run === "RUNNING")
+      .filter((p) => p.id !== store.me && (lobby ? p.character !== null && p.connected : p.active && p.run === "RUNNING"))
       .map((p) => p.id)
       .filter((id) => {
         const r = this.remotes.get(id);
@@ -372,7 +387,7 @@ export class LevelScene extends Phaser.Scene {
 
   private drawPointers(): void {
     const live = new Set<string>();
-    if (this.phase === "RUN" || this.phase === "COUNTDOWN") {
+    if (this.phase === "RUN" || this.phase === "COUNTDOWN" || inLobby(this.phase)) {
       for (const id of this.runnersToWatch()) {
         const r = this.remotes.get(id)!;
         const at = this.edgePoint(r.view.x, r.view.y - 20);
@@ -451,6 +466,16 @@ export class LevelScene extends Phaser.Scene {
       keep(this.addSolid(this.solids, solid.x, solid.y, solid.w, solid.h));
     }
 
+    this.signCounts.clear();
+    this.signGlow = null;
+    if (def === LOBBY) {
+      this.buildSigns(keep);
+      // nothing to finish in the lobby, but runners still check a goal
+      this.goal = keep(this.add.zone(-1000, -1000, 1, 1));
+      this.physics.add.existing(this.goal, true);
+      return;
+    }
+
     // START: a small painted sign by the spawn
     const { spawn, flag } = def;
     const sign = keep(this.add.graphics().setDepth(4));
@@ -490,6 +515,66 @@ export class LevelScene extends Phaser.Scene {
     this.physics.add.existing(this.goal, true);
   }
 
+  // The lobby's three signs, one per map: a board on a post with the map's
+  // name and a small picture of it, and a marked space under it to stand in.
+  private buildSigns(keep: <T extends Phaser.GameObjects.GameObject>(o: T) => T): void {
+    const g = keep(this.add.graphics().setDepth(4));
+    this.signGlow = keep(this.add.graphics().setDepth(3));
+    keep(this.add.text((LOBBY_COLS * CELL) / 2, 13 * CELL, "Stand under the map you want to play", {
+      fontFamily: "Georgia, serif", fontSize: "22px", color: "#4a3420",
+    }).setOrigin(0.5).setDepth(4));
+    for (const sign of LOBBY.signs) {
+      const def = levelById(sign.layout);
+      const { x, y } = sign.at;
+      const z = sign.zone;
+      // the post and the board: a picture of the course above its name
+      const bw = 200, top = y - 96, th = (bw - 20) * (HEIGHT / WIDTH);
+      g.fillStyle(C.woodDeep, 1);
+      g.fillRect(x - 3, y + 30, 6, z.y - y - 30);
+      g.fillStyle(C.woodLight, 1);
+      g.lineStyle(3, C.woodDeep, 1);
+      g.fillRoundedRect(x - bw / 2, top, bw, th + 46, 6);
+      g.strokeRoundedRect(x - bw / 2, top, bw, th + 46, 6);
+      // a thumbnail of the course, from its data
+      const s = (bw - 20) / WIDTH, ox = x - bw / 2 + 10, oy = top + 9;
+      g.fillStyle(C.paperLight, 1);
+      g.fillRect(ox, oy, bw - 20, th);
+      for (const blk of def.blocks) {
+        const r = cellToPixels(blk);
+        g.fillStyle(blk.style === "post" ? C.steel : C.wood, 1);
+        g.fillRect(ox + r.x * s, oy + r.y * s, Math.max(1.5, r.w * s), Math.max(1.5, (blk.style === "shelf" || blk.style === "peg" ? 20 : r.h) * s));
+      }
+      g.fillStyle(C.red, 1);
+      g.fillTriangle(ox + def.flag.x * s, oy + def.flag.y * s - 10, ox + def.flag.x * s, oy + def.flag.y * s - 4, ox + def.flag.x * s + 7, oy + def.flag.y * s - 7);
+      keep(this.add.text(x, oy + th + 18, `Map ${def.id} · ${def.name}`, { fontFamily: "Georgia, serif", fontSize: "15px", fontStyle: "bold", color: "#4a3420" }).setOrigin(0.5).setDepth(4));
+      // the space to stand in
+      g.lineStyle(2, C.woodDark, 0.5);
+      g.strokeRoundedRect(z.x + 4, z.y + 4, z.w - 8, z.h - 8, 10);
+      this.signCounts.set(sign.layout, keep(this.add.text(x, z.y - 4, "", {
+        fontFamily: "system-ui, sans-serif", fontSize: "14px", fontStyle: "bold", color: "#4a4640",
+      }).setOrigin(0.5, 1).setDepth(4)));
+    }
+  }
+
+  // who stands under which sign, from the server
+  private drawSignVotes(): void {
+    const g = this.signGlow;
+    if (!g) return;
+    g.clear();
+    const snap = store.snap;
+    for (const sign of LOBBY.signs) {
+      const votes = (snap?.players ?? []).filter((p) => p.pick === sign.layout && p.character !== null);
+      const z = sign.zone;
+      if (votes.length) {
+        g.fillStyle(C.mustard, 0.16 + 0.06 * votes.length);
+        g.fillRoundedRect(z.x + 4, z.y + 4, z.w - 8, z.h - 8, 10);
+      }
+      const label = this.signCounts.get(sign.layout);
+      const text = votes.length ? `${votes.length} vote${votes.length === 1 ? "" : "s"}` : "";
+      if (label && label.text !== text) label.setText(text);
+    }
+  }
+
   private addSolid(group: Phaser.Physics.Arcade.StaticGroup, x: number, y: number, w: number, h: number): Phaser.GameObjects.Rectangle {
     const r = this.add.rectangle(x + w / 2, y + h / 2, w, h).setVisible(false);
     this.physics.add.existing(r, true);
@@ -502,9 +587,10 @@ export class LevelScene extends Phaser.Scene {
   applySnapshot(): void {
     const snap = store.snap;
     if (!snap) return;
-    if (snap.layout !== this.courseLayout) {
+    const def = inLobby(snap.phase) ? LOBBY : levelById(snap.layout);
+    if (def.id !== this.courseLayout) {
       this.clearCharacters();
-      this.buildCourse(levelById(snap.layout));
+      this.buildCourse(def);
       this.lookAtStart();
     }
     // the course's own pieces work exactly like placed ones
@@ -513,12 +599,14 @@ export class LevelScene extends Phaser.Scene {
     if (snap.phase !== this.phase) this.enterPhase(snap.phase, snap.phaseElapsedMs);
     this.syncPlayers();
     this.drawBuildLayer();
+    this.drawSignVotes();
   }
 
   private enterPhase(phase: Phase, elapsedMs: number): void {
     const before = this.phase;
     this.phase = phase;
-    if (phase === "BUILD" || phase === "LEVEL_END") this.clearCharacters();
+    if (phase === "BUILD" || phase === "LEVEL_END" || (phase === "SELECT" && before !== "SELECT")) this.clearCharacters();
+    this.standingUnder = null;
     if (phase === "COUNTDOWN" || (phase === "RUN" && before !== "COUNTDOWN")) this.placeAtStart(phase === "RUN");
     if (phase === "RUN") {
       this.spent.clear();
@@ -637,6 +725,7 @@ export class LevelScene extends Phaser.Scene {
 
   // Everyone starts at START, nudged apart a little so all are visible.
   private spawnFor(id: string): { x: number; y: number } {
+    if (this.course === LOBBY) return { x: this.course.spawn.x + this.characterOf(id) * 30, y: this.course.spawn.y };
     const active = (store.snap?.players ?? []).filter((p) => p.active);
     const i = Math.max(0, active.findIndex((p) => p.id === id));
     return { x: this.course.spawn.x - 28 + i * 18, y: this.course.spawn.y };
@@ -702,6 +791,7 @@ export class LevelScene extends Phaser.Scene {
 
   private syncPlayers(): void {
     const snap = store.snap!;
+    if (inLobby(snap.phase)) return this.syncLobby();
     if (snap.phase !== "RUN" && snap.phase !== "RESULTS") return;
     for (const p of snap.players) {
       if (p.id === store.me) {
@@ -727,10 +817,33 @@ export class LevelScene extends Phaser.Scene {
     }
   }
 
+  // In the lobby: my runner while I hold a seat (a new one if I switch
+  // characters), and the others who hold one.
+  private syncLobby(): void {
+    const snap = store.snap!;
+    const me = snap.players.find((p) => p.id === store.me);
+    if (this.local && (me?.character == null || me.character !== this.local.character)) {
+      const at = { x: this.local.rect.x, y: this.local.rect.y + 14 };
+      this.local.rect.destroy();
+      this.local.view.destroy();
+      this.local = null;
+      if (me?.character != null) this.createLocal(at.x, at.y, true);
+    } else if (!this.local && me?.character != null) {
+      const at = this.spawnFor(store.me);
+      this.createLocal(at.x, at.y, true);
+    }
+    for (const [id, r] of this.remotes) {
+      const p = snap.players.find((q) => q.id === id);
+      if (p?.character != null && p.connected && p.character === r.character) continue;
+      r.view.destroy();
+      this.remotes.delete(id);
+    }
+  }
+
   onRemotePose(id: string, x: number, y: number, vx: number, vy: number, facing: -1 | 1): void {
-    if (this.phase !== "RUN") return;
     const p = store.snap?.players.find((q) => q.id === id);
-    if (!p || p.run !== "RUNNING") return;
+    if (!p) return;
+    if (inLobby(this.phase) ? p.character === null : this.phase !== "RUN" || p.run !== "RUNNING") return;
     const r = this.ensureRemote(id);
     r.samples.push({ t: performance.now(), x, y, vx, vy, facing });
     if (r.samples.length > 20) r.samples.shift();
@@ -950,7 +1063,7 @@ export class LevelScene extends Phaser.Scene {
     this.animateShots(runMs);
     if (this.phase === "BUILD") this.drawGhosts();
     if (this.local?.flung) this.tumble(time);
-    else if (this.local?.live && this.phase === "RUN") this.step(time, delta / 1000);
+    else if (this.local?.live && (this.phase === "RUN" || inLobby(this.phase))) this.step(time, delta / 1000);
     else if (this.local) {
       this.local.view.setPosition(this.local.rect.x, this.local.rect.y + 14);
       this.redrawLocal("stand", time);
@@ -1169,9 +1282,10 @@ export class LevelScene extends Phaser.Scene {
       r.facing = b.facing;
       const pose: Pose = Math.abs(b.vy) > 80 ? (b.vy < 0 ? "jump" : "fall") : Math.abs(b.vx) > 30 ? "run" : "stand";
       r.figure.clear();
-      drawCharacter(r.figure, r.character, r.facing, this.phase === "RUN" ? pose : "stand", time);
+      const moving = this.phase === "RUN" || inLobby(this.phase);
+      drawCharacter(r.figure, r.character, r.facing, moving ? pose : "stand", time);
       // their dust too: running, and landing after a fall
-      if (this.phase === "RUN") {
+      if (moving) {
         const feetX = r.view.x, feetY = r.view.y;
         if (pose === "run" && time - r.lastDustAt > 140) {
           r.lastDustAt = time;
@@ -1271,6 +1385,15 @@ export class LevelScene extends Phaser.Scene {
     if (now - l.lastPoseAt >= POSE_EVERY_MS) {
       l.lastPoseAt = now;
       bus.pose({ x: Math.round(l.rect.x), y: Math.round(l.rect.y + 14), vx: Math.round(b.velocity.x), vy: Math.round(b.velocity.y), facing: l.facing });
+    }
+
+    // in the lobby, standing under a sign is a vote for that map
+    if (this.course === LOBBY && this.phase === "SELECT") {
+      const under = LOBBY.signs.find((sg) => inside(sg.zone, l.rect.x, l.rect.y))?.layout ?? null;
+      if (under !== this.standingUnder) {
+        this.standingUnder = under;
+        bus.pick(under);
+      }
     }
   }
 

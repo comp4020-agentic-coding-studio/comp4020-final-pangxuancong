@@ -36,6 +36,9 @@
     { "id": "F29", "name": "Edge badges for off-screen runners; watching others after you are out", "status": "verified", "priority": "multiplayer" },
     { "id": "F30", "name": "Too simple: a round everyone finishes scores nobody, with a stamp", "status": "verified", "priority": "core" },
     { "id": "F31", "name": "First to 4 points ends the game; round-end bars toward 4", "status": "verified", "priority": "core" },
-    { "id": "F32", "name": "Launcher item: one shot a second, a hit knocks the runner out", "status": "verified", "priority": "gameplay" }
+    { "id": "F32", "name": "Launcher item: one shot a second, a hit knocks the runner out", "status": "verified", "priority": "gameplay" },
+    { "id": "F33", "name": "Rooms: lobby at / lists rooms, new room, join by code or /r/CODE link; each room its own level and game", "status": "verified", "priority": "multiplayer" },
+    { "id": "F34", "name": "Seats are the four characters; a dropped connection keeps seat and points for 2 min and holds the round 8 s at most", "status": "verified", "priority": "multiplayer" },
+    { "id": "F35", "name": "Walkable lobby: stand under a map sign to vote; a split vote is a weighted draw with an animation", "status": "verified", "priority": "gameplay" }
   ]
 }

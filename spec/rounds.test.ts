@@ -1,7 +1,8 @@
 import { expect, it } from "vitest";
 import {
-  BUILD_IDLE_MS, BUILD_MAX_MS, COUNTDOWN_MS, MAX_PLAYERS, MAX_ROUNDS, RESULTS_MS, RUN_IDLE_MS, type RoundState, VOTE_MS,
-  SELECT_MS, STAMP_MS, WIN_POINTS, act, join, leave, moved, newRoundState, pick, report, tick, tooSimple, touchBuild, vote,
+  BUILD_IDLE_MS, BUILD_MAX_MS, COUNTDOWN_MS, DRAW_MS, LOCK_MS, MAX_PLAYERS, MAX_ROUNDS, RECONNECT_GRACE_MS, RESULTS_MS, RUN_IDLE_MS, type RoundState,
+  SEAT_HOLD_MS, SELECT_MS, STAMP_MS, VOTE_MS, WIN_POINTS, act, claim, drawResult, join, leave, moved, newRoundState, pick, report, tick, tooSimple,
+  touchBuild, unclaim, vote,
 } from "../src/shared/rounds.ts";
 import { type ScoreEvent, killCredit, tally } from "../src/shared/score.ts";
 
@@ -9,10 +10,15 @@ import { type ScoreEvent, killCredit, tally } from "../src/shared/score.ts";
 // time. Phases end when players are resolved, never on a gameplay timer; the
 // AFK and idle limits only stop a walked-away player holding everyone up.
 
+// joining and taking the next free character (a seat)
+const sit = (s: RoundState, id: string, t = 0): void => {
+  join(s, id, id.toUpperCase(), t);
+  for (let c = 0; c < MAX_PLAYERS; c++) if (claim(s, id, c, t)) return;
+};
 const twoBuilding = (t = 0): RoundState => {
   const s = newRoundState(1, t);
-  join(s, "a", "A", t);
-  join(s, "b", "B", t);
+  sit(s, "a", t);
+  sit(s, "b", t);
   return s;
 };
 
@@ -33,11 +39,25 @@ it("S3: BUILD ends once every active player has placed or skipped, not before", 
   expect(tick(s, 2000)).toEqual({ to: "COUNTDOWN" });
 });
 
-it("S3: a disconnected player does not hold BUILD", () => {
+it("S3: a disconnected player holds BUILD only for the reconnect grace", () => {
   const s = twoBuilding();
   act(s, "a", "PLACED");
-  leave(s, "b");
-  expect(tick(s, 1000)?.to).toBe("COUNTDOWN");
+  leave(s, "b", 1000);
+  expect(tick(s, 1000 + RECONNECT_GRACE_MS - 1)).toBeNull(); // a wifi blip costs nothing
+  expect(tick(s, 1000 + RECONNECT_GRACE_MS)?.to).toBe("COUNTDOWN");
+});
+
+it("keeps a dropped player's seat: back within the grace, they still build", () => {
+  const s = twoBuilding();
+  act(s, "a", "PLACED");
+  leave(s, "b", 1000);
+  tick(s, 3000);
+  join(s, "b", "B", 3000);
+  const b = s.players.find((p) => p.id === "b")!;
+  expect(b.build).toBe("WAITING");
+  expect(tick(s, 1000 + RECONNECT_GRACE_MS + 1)).toBeNull(); // b is back: BUILD waits for b
+  act(s, "b", "SKIPPED");
+  expect(tick(s, 20_000)?.to).toBe("COUNTDOWN");
 });
 
 it("gives each active player exactly one build action", () => {
@@ -47,17 +67,21 @@ it("gives each active player exactly one build action", () => {
   expect(act(s, "a", "SKIPPED")).toBe(false);
 });
 
-it("lets players join during BUILD, and makes later joiners spectate", () => {
+it("lets players take a seat during BUILD, and makes later ones wait for the next build", () => {
   const s = twoBuilding();
   join(s, "c", "C", 500);
+  expect(s.players.find((p) => p.id === "c")?.active).toBe(false); // watching until a character is chosen
+  expect(claim(s, "c", 0, 500)).toBe(false); // the Chicken is a's
+  expect(claim(s, "c", 2, 500)).toBe(true);
   expect(s.players.find((p) => p.id === "c")?.active).toBe(true);
   act(s, "a", "PLACED");
   act(s, "b", "SKIPPED");
   act(s, "c", "SKIPPED");
   toRun(s, 1000);
-  join(s, "d", "D", 5000);
+  sit(s, "d", 5000);
   const d = s.players.find((p) => p.id === "d")!;
-  expect(d.active).toBe(false);
+  expect(d.character).toBe(3); // seated...
+  expect(d.active).toBe(false); // ...but this run had already started
   expect(d.run).toBeNull();
 });
 
@@ -82,10 +106,10 @@ it("does not let a fidgeting player hold BUILD past the hard limit", () => {
 it("never completes an empty BUILD, and restarts one everyone left", () => {
   const s = newRoundState(1, 0);
   expect(tick(s, 500_000)).toBeNull();
-  join(s, "a", "A", 500_000);
+  sit(s, "a", 500_000);
   // the first player into an empty BUILD gets the full window
   expect(tick(s, 500_000 + BUILD_IDLE_MS - 1)).toBeNull();
-  leave(s, "a");
+  leave(s, "a", 540_000);
   expect(tick(s, 600_000)).toBeNull();
   expect(s.phase).toBe("BUILD");
 });
@@ -106,14 +130,17 @@ it("S4: RUN continues while anyone is RUNNING and ends when nobody is", () => {
   expect(s.players.every((p) => p.build === "WAITING" && p.run === null)).toBe(true);
 });
 
-it("S4: a disconnected runner does not hold RUN", () => {
+it("S4: a disconnected runner holds RUN only for the reconnect grace", () => {
   const s = twoBuilding();
   act(s, "a", "PLACED");
   act(s, "b", "SKIPPED");
   const t = toRun(s, 0);
   report(s, "a", "DEAD");
-  leave(s, "b");
-  expect(tick(s, t + 1)?.to).toBe("RESULTS");
+  leave(s, "b", t);
+  moved(s, "b", t);
+  expect(tick(s, t + RECONNECT_GRACE_MS - 1)).toBeNull();
+  expect(tick(s, t + RECONNECT_GRACE_MS)?.to).toBe("RESULTS");
+  expect(s.players.find((p) => p.id === "b")?.run).toBe("DISCONNECTED");
 });
 
 it("drops a runner who has not moved for a long time", () => {
@@ -166,56 +193,121 @@ it("S8: nobody voting keeps the level once the vote times out", () => {
   expect(vote(s, "a", "RESTART")).toBe(false); // the vote is over
 });
 
-it("S9: seats four players; a fifth watches and takes a seat that frees up", () => {
+it("S9: four characters are four seats; a fifth person watches and takes a seat once it is released", () => {
   const s = newRoundState(1, 0);
-  for (const id of ["a", "b", "c", "d", "e"]) join(s, id, id.toUpperCase(), 0);
+  for (const id of ["a", "b", "c", "d", "e"]) sit(s, id, 0);
   expect(s.players.filter((p) => p.active).map((p) => p.id)).toEqual(["a", "b", "c", "d"]);
+  expect(s.players.find((p) => p.id === "e")?.character).toBeNull();
   expect(MAX_PLAYERS).toBe(4);
   for (const id of ["a", "b", "c", "d"]) act(s, id, "SKIPPED");
   let t = toRun(s, 0);
-  expect(s.players.find((p) => p.id === "e")?.run).toBeNull();
-  leave(s, "b");
+  leave(s, "b", t);
   for (const id of ["a", "c", "d"]) report(s, id, "DEAD");
-  tick(s, ++t);
+  t += RECONNECT_GRACE_MS;
+  tick(s, t);
   tick(s, t + RESULTS_MS);
   expect(s.phase).toBe("BUILD");
-  expect(s.players.filter((p) => p.active).map((p) => p.id)).toEqual(["a", "c", "d", "e"]);
+  // b's seat (the Big Dog) is held for b, so e still cannot have it
+  expect(claim(s, "e", 1, t + RESULTS_MS)).toBe(false);
+  t += SEAT_HOLD_MS;
+  tick(s, t);
+  expect(s.players.some((p) => p.id === "b")).toBe(false);
+  expect(claim(s, "e", 1, t)).toBe(true);
+  // meanwhile the others timed out of BUILD, so e plays from the next one
+  expect(s.phase).toBe("COUNTDOWN");
+  expect(s.players.find((p) => p.id === "e")).toMatchObject({ character: 1, active: false });
 });
 
-it("starts a fresh game by choosing a level: everyone picks, or the clock runs out after the first pick", () => {
+it("gives a returning player their seat, character and place back within the seat hold", () => {
+  const s = twoBuilding();
+  for (const id of ["a", "b"]) act(s, id, "SKIPPED");
+  let t = toRun(s, 0);
+  leave(s, "b", t);
+  report(s, "a", "DEAD");
+  t += RECONNECT_GRACE_MS;
+  expect(tick(s, t)?.to).toBe("RESULTS");
+  expect(tick(s, t + RESULTS_MS)?.to).toBe("BUILD");
+  // still away at the next build: on the roster, and its grace is already over
+  expect(s.players.find((p) => p.id === "b")).toMatchObject({ character: 1, active: true, build: "DISCONNECTED" });
+  t += RESULTS_MS + 30_000;
+  join(s, "b", "B", t);
+  expect(s.players.find((p) => p.id === "b")).toMatchObject({ character: 1, active: true, build: "WAITING" });
+});
+
+it("chooses a map by where seated players stand: all agree, or the clock runs out after the first", () => {
   const s = newRoundState(1, 0, "SELECT");
-  join(s, "a", "A", 0);
-  join(s, "b", "B", 0);
-  expect(s.players.every((p) => !p.active)).toBe(true); // nobody is seated while choosing
-  expect(tick(s, 600_000)).toBeNull(); // no clock before anyone picks
+  sit(s, "a", 0);
+  sit(s, "b", 0);
+  join(s, "w", "W", 0); // watching: no vote
+  expect(pick(s, "w", 1, 0)).toBe(false);
+  expect(s.players.every((p) => !p.active)).toBe(true); // nobody plays while choosing
+  expect(tick(s, 600_000)).toBeNull(); // no clock before anyone stands under a sign
   expect(pick(s, "a", 3, 600_000)).toBe(true);
-  expect(pick(s, "a", 7, 600_000)).toBe(false); // no such level
+  expect(pick(s, "a", 7, 600_000)).toBe(false); // no such map
   expect(tick(s, 600_000 + SELECT_MS - 1)).toBeNull();
   expect(tick(s, 600_000 + SELECT_MS)).toEqual({ to: "BUILD", newLevel: true, archive: false, layout: 3 });
-  expect(s.players.every((p) => p.active && p.build === "WAITING")).toBe(true);
+  expect(s.players.filter((p) => p.active).map((p) => p.id)).toEqual(["a", "b"]);
+  expect(s.players.find((p) => p.id === "w")?.active).toBe(false);
 
-  const tie = newRoundState(1, 0, "SELECT");
-  join(tie, "a", "A", 0);
-  join(tie, "b", "B", 0);
-  pick(tie, "a", 3, 1);
-  pick(tie, "b", 2, 2);
-  expect(tick(tie, 3)).toEqual({ to: "BUILD", newLevel: true, archive: false, layout: 2 }); // all in; a tie goes to the lower level
+  // everyone under the same sign: a short lock, then that map
+  const all = newRoundState(1, 0, "SELECT");
+  sit(all, "a", 0);
+  sit(all, "b", 0);
+  pick(all, "a", 2, 10);
+  pick(all, "b", 2, 20);
+  expect(tick(all, 20)).toBeNull();
+  pick(all, "b", null, 500); // walked off again: the lock starts over
+  tick(all, 600);
+  pick(all, "b", 2, 1000);
+  expect(tick(all, 1000)).toBeNull();
+  expect(tick(all, 1000 + LOCK_MS - 1)).toBeNull();
+  expect(tick(all, 1000 + LOCK_MS)).toEqual({ to: "BUILD", newLevel: true, archive: false, layout: 2 });
 });
 
-it("gives each seat its own character and keeps it into the next game", () => {
-  const s = newRoundState(1, 0);
-  for (const id of ["a", "b", "c", "d", "e"]) join(s, id, id, 0);
-  const chars = s.players.filter((p) => p.active).map((p) => p.character);
-  expect(chars).toEqual([0, 1, 2, 3]);
-  expect(s.players.find((p) => p.id === "e")?.character).toBeNull();
-  leave(s, "a");
-  for (const id of ["b", "c", "d"]) act(s, id, "SKIPPED");
-  let t = toRun(s, 0);
-  for (const id of ["b", "c", "d"]) report(s, id, "DEAD");
-  tick(s, ++t);
-  tick(s, t + RESULTS_MS);
-  // e takes a's seat and the character a left free; the others keep theirs
-  expect(Object.fromEntries(s.players.map((p) => [p.id, p.character]))).toEqual({ b: 1, c: 2, d: 3, e: 0 });
+it("draws a split vote by lot, weighted by the votes", () => {
+  // three for map 1 and one for map 2: map 1 three times in four
+  const options = [{ layout: 1, votes: 3 }, { layout: 2, votes: 1 }];
+  expect(drawResult(options, 0)).toBe(1);
+  expect(drawResult(options, 0.74)).toBe(1);
+  expect(drawResult(options, 0.75)).toBe(2);
+  expect(drawResult(options, 0.999)).toBe(2);
+  const counts = { 1: 0, 2: 0 } as Record<number, number>;
+  for (let i = 0; i < 1000; i++) counts[drawResult(options, i / 1000)]++;
+  expect(counts).toEqual({ 1: 750, 2: 250 });
+
+  const s = newRoundState(1, 0, "SELECT");
+  for (const id of ["a", "b", "c", "d"]) sit(s, id, 0);
+  for (const id of ["a", "b", "c"]) pick(s, id, 1, 0);
+  pick(s, "d", 2, 0);
+  tick(s, 0);
+  expect(tick(s, LOCK_MS, 0, () => 0.9)).toEqual({ to: "DRAW" });
+  expect(s.draw).toEqual({ options: [{ layout: 1, votes: 3 }, { layout: 2, votes: 1 }], result: 2 });
+  expect(tick(s, LOCK_MS + DRAW_MS - 1)).toBeNull(); // the draw animation plays
+  expect(tick(s, LOCK_MS + DRAW_MS)).toEqual({ to: "BUILD", newLevel: true, archive: false, layout: 2 });
+});
+
+it("lets a seated player swap to a free character or give the seat up while choosing, not mid-game", () => {
+  const s = newRoundState(1, 0, "SELECT");
+  sit(s, "a", 0);
+  sit(s, "b", 0);
+  expect(claim(s, "a", 1, 0)).toBe(false); // b's
+  expect(claim(s, "a", 3, 0)).toBe(true);
+  expect(unclaim(s, "b")).toBe(true);
+  expect(s.players.find((p) => p.id === "b")?.character).toBeNull();
+  pick(s, "a", 1, 0);
+  tick(s, 0);
+  tick(s, LOCK_MS);
+  expect(s.phase).toBe("BUILD");
+  expect(claim(s, "a", 0, LOCK_MS)).toBe(false); // seated players keep their character in a game
+});
+
+it("keeps every seat's character into the next game", () => {
+  const s = twoBuilding();
+  const t = toLevelEnd(s, ["a", "b"]);
+  vote(s, "a", "RESTART");
+  vote(s, "b", "RESTART");
+  expect(tick(s, t + 1)?.to).toBe("SELECT");
+  expect(Object.fromEntries(s.players.map((p) => [p.id, p.character]))).toEqual({ a: 0, b: 1 });
 });
 
 it("S7: +1 for the flag, +0.2 to the placer per other player spiked, nothing for your own spike", () => {
@@ -241,7 +333,7 @@ it("S7: +1 for the flag, +0.2 to the placer per other player spiked, nothing for
 
 it("goes to the archive-or-restart vote after six rounds, not before", () => {
   const s = newRoundState(1, 0);
-  join(s, "a", "A", 0);
+  sit(s, "a", 0);
   toLevelEnd(s, ["a"]);
   expect(s.phase).toBe("LEVEL_END");
 });
@@ -263,14 +355,14 @@ it("calls a round too simple when everyone who ran reached the flag, and holds i
   for (const id of ["a", "b"]) act(s, id, "SKIPPED");
   t = toRun(s, t + RESULTS_MS + STAMP_MS);
   report(s, "a", "FINISHED");
-  leave(s, "b");
-  expect(tooSimple(s)).toBe(false);
-  expect(tick(s, ++t)).toMatchObject({ tooSimple: false });
+  leave(s, "b", t);
+  t += RECONNECT_GRACE_MS;
+  expect(tick(s, t)).toMatchObject({ to: "RESULTS", tooSimple: false });
 });
 
 it("lets a player alone score for the flag: too simple needs two runners", () => {
   const s = newRoundState(1, 0);
-  join(s, "a", "A", 0);
+  sit(s, "a", 0);
   act(s, "a", "SKIPPED");
   let t = toRun(s, 0);
   report(s, "a", "FINISHED");

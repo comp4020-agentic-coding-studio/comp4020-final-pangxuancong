@@ -134,3 +134,31 @@ export const LEVELS: readonly LevelDef[] = [
 ];
 
 export const levelById = (id: number | null | undefined): LevelDef => LEVELS.find((l) => l.id === id) ?? LEVELS[0];
+
+// The lobby room players walk around while choosing a map: one screen wide,
+// a floor, two crates to hop over, and three signs on posts. Standing in the
+// space under a sign is a vote for that map (docs/GAME_LOOP.md). It is never
+// built on, and nobody can fall out of it.
+export const LOBBY_COLS = 32; // the width of the view
+export const LOBBY: LevelDef & { signs: { layout: number; zone: PixelRect; at: { x: number; y: number } }[] } = {
+  id: 0,
+  name: "Lobby",
+  blurb: "",
+  blocks: [
+    b(0, 26, LOBBY_COLS, 1, "floor"),
+    b(0, 14, 1, 12, "post"), b(LOBBY_COLS - 1, 14, 1, 12, "post"), // walls
+    b(10, 24, 2, 2, "crate"), b(20, 24, 2, 2, "crate"),
+  ],
+  fixtures: [],
+  start: { col: 1, row: 22, w: 2, h: 4 },
+  goal: { col: 0, row: 0, w: 0, h: 0 },
+  spawn: { x: 1.8 * CELL, y: 26 * CELL },
+  flag: { x: -1000, y: -1000 },
+  goalTrigger: { x: -1000, y: -1000, w: 0, h: 0 },
+  decor: [],
+  // under each sign, a three-cell space on the floor
+  signs: [1, 2, 3].map((layout, i) => {
+    const col = 4 + i * 10;
+    return { layout, at: { x: (col + 1.5) * CELL, y: 18 * CELL }, zone: { x: col * CELL, y: 23 * CELL, w: 3 * CELL, h: 3 * CELL } };
+  }),
+};

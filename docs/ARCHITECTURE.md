@@ -4,25 +4,33 @@
 
 ```text
 Browser (src/client, built by Vite)
-├── index.html + styles.css: header, roster, phase line, Parts Tray, overlays
-├── main.ts: identity (sessionStorage), socket, keyboard, build actions
+├── index.html + lobby.ts: the lobby at /: rooms, new room, join by code
+├── room.html + styles.css: a room at /r/CODE: header, roster, phase line,
+│   Parts Tray, overlays (character choice, map draw, round and final cards)
+├── main.ts: room from the URL, identity per room (session + localStorage),
+│   socket, keyboard, build actions
 ├── ui.ts: renders the HTML shell from the snapshot
-├── scene.ts: Phaser scene: level, items, previews, local player (Arcade
-│   Physics), remote players (interpolated), traces
+├── scene.ts: Phaser scene: the lobby room with its map signs (SELECT, DRAW)
+│   or the level, items, previews, local player (Arcade Physics), remote
+│   players (interpolated), traces
 └── draw.ts: how every piece looks
         │ Socket.IO: snapshot (whole shared state on every change),
         │ build:preview/commit/bomb/skip, run:pose (~12/s, volatile),
-        │ run:result (with the killing spike), level:vote
+        │ run:result (with the killing spike), level:vote, level:pick (the
+        │ sign stood under), seat:claim/leave; the handshake names the room
 Server (src/server, TypeScript run directly by Node)
-├── main.ts: Express, /readme/, /api/level, Vite middleware in dev,
-│   dist/client in production
-├── game.ts: round clock (200 ms tick), roster, item validation, sockets
+├── main.ts: Express, /readme/, /api/rooms, /api/rooms/:code/level, the two
+│   pages, Vite middleware in dev, dist/client in production
+├── game.ts: rooms; per room a round clock (200 ms tick), roster, item
+│   validation and its sockets
 └── db.ts: the only code that touches SQLite
 Shared (src/shared, imported by both and by spec/)
 ├── level.ts: grid, items, placement + demolition rules
-├── levels.ts: the three fixed courses (blocks, fixtures, START/GOAL)
+├── levels.ts: the three fixed courses (blocks, fixtures, START/GOAL), and
+│   the lobby room with its three signs
 ├── characters.ts: the four seat characters
-├── rounds.ts: the round state machine (seats, timeouts, vote), pure
+├── rounds.ts: the round state machine (seats as characters, reconnect
+│   grace and seat hold, walking vote, weighted draw, timeouts), pure
 ├── score.ts: points from score events, and who a spike death credits
 ├── movement.ts: movement constants and the wall-jump rule
 └── protocol.ts: socket event types
@@ -103,13 +111,15 @@ server does not simulate player physics.
 Persistent (SQLite):
 
 ```sql
-level(id, round, layout, parent_id, outcome, finished_at, created_at, updated_at)
+level(id, room, round, layout, parent_id, outcome, finished_at, created_at, updated_at)
 placed_item(id, level_id, type, col, row, rot, created_by, created_by_id,
             created_round, created_at, destroyed_by, destroyed_round, destroyed_at)
 score_event(level_id, round, player_id, name, kind, created_at)
 ```
 
-One level row is one game (up to six rounds, or until someone has 4 points). Archiving finishes it with
+Each room has its own chain of levels (`room` is its code; games from before
+rooms are in `MAIN`). A room with a game in play is reopened when the server
+starts. One level row is one game (up to six rounds, or until someone has 4 points). Archiving finishes it with
 `outcome = 'archived'` and starts a new row with `parent_id` pointing at it
 and a copy of its surviving items; restarting starts a bare row on the course chosen in SELECT. `layout` is
 the course number (1–3); an archived copy keeps its parent's. Scores are
@@ -121,9 +131,10 @@ A finished level keeps its items. Old crit 8 tables (`mechanism`, `attempt`)
 may remain in an old database; nothing reads them.
 
 Ephemeral (process memory, never SQLite): player position and velocity,
-alive/dead state, build previews, socket ids, the current roster, selections,
-interpolation state, last-run death traces. After a server restart the level
-reloads and the session safely returns to BUILD.
+alive/dead state, build previews, socket ids, the current roster and seats,
+held seats, map picks and the draw, selections, interpolation state,
+last-run death traces. After a server restart each room's level reloads and
+the room returns to BUILD; players take their characters again.
 
 ## Build validation
 

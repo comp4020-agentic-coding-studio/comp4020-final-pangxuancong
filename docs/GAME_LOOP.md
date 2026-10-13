@@ -3,7 +3,8 @@
 ## State machine
 
 ```text
-SELECT (choose one of three levels) ──▶ BUILD
+SELECT (walk to a map sign) ──(all agree)──▶ BUILD
+   └──(split vote)──▶ DRAW (weighted lot) ──▶ BUILD
 BUILD ──(no active player WAITING)──▶ COUNTDOWN ──▶ RUN
   ▲                                                  │
   ├──── RESULTS ◀──────(no active player RUNNING)────┘
@@ -14,10 +15,30 @@ BUILD ──(no active player WAITING)──▶ COUNTDOWN ──▶ RUN
 
 The level persists across every transition. The server owns the phase.
 
-Before a game, everyone connected picks one of three fixed courses
-(`src/shared/levels.ts`: The Gaps, The Tower, The Swing). The first pick
-starts a 20 s count; it closes early once everyone has picked. Most picks
-wins, a tie goes to the lower level number. Picks are ephemeral.
+Everything below happens inside one room (`/r/CODE`); rooms do not affect
+each other (`docs/decisions/0002-rooms-and-seats.md`).
+
+**Seats are characters.** A room has four characters (Chicken, Big Dog, Pot
+Horse, Dabai). Choosing a free one takes a seat; nobody is seated
+automatically. While choosing a map a seated player may swap to another free
+character or give the seat up; during a game they keep it. Everyone without
+a character watches.
+
+**Choosing a map is walking.** Before a game the room shows the lobby: a
+floor with three signs, one per course (`src/shared/levels.ts`: The Gaps,
+The Tower, The Swing). Seated players run around it with the normal
+controls; standing in the space under a sign is a vote for that course
+(decided by the human, 2026-10-13). When every seated player who is
+connected stands under a sign for 2 s, or 30 s after the first one did,
+voting closes:
+
+- all under one sign: that course;
+- split: DRAW, a lot weighted by the votes (three for map 1 and one for map 2
+  is 75% and 25%), shown as a marker sweeping a strip of the maps, each as
+  wide as its votes. The server draws; every client animates to the same
+  result. Then BUILD.
+
+Picks and the draw are ephemeral.
 
 A game on one level ends at the end of the round in which someone reaches
 **4 points**, or after **six rounds**, whichever comes first (decided by the
@@ -25,16 +46,24 @@ human, 2026-10-13). Then comes LEVEL_END: the final scores, and a vote on
 what happens to the level (below). Each player
 adds at most one item per round.
 
-**At most four players** are on a round. Anyone beyond that spectates, and
-takes a free seat at the next BUILD, in order of arrival.
+**At most four players** are on a round: the seated ones. A seat taken
+while BUILD is open plays at once; one taken later plays from the next
+BUILD.
+
+**Dropped connections.** A seated player whose connection drops is held,
+not removed. For 8 s (the reconnect grace) the round treats them as still
+there; after that BUILD and RUN go on without them (DISCONNECTED), as in
+`docs/decisions/0001-nobody-holds-the-round.md`. Their seat, character and
+points are kept for 2 minutes; back in time, they carry on (still able to
+build if BUILD is open). After that the seat is released.
 
 ## Active round players
 
-The roster is open during BUILD, up to four players: everyone connected when
-BUILD starts, plus anyone who joins before it ends while a seat is free, is
-an active player for the round. It closes
-at COUNTDOWN; anyone joining during COUNTDOWN, RUN or RESULTS spectates until
-the next BUILD. The AFK timeout below means a late joiner can never hold BUILD
+The roster is open during BUILD: everyone holding a seat when BUILD starts
+(including a held seat whose player is reconnecting), plus anyone who takes
+a free seat before it ends, is an active player for the round. It closes at
+COUNTDOWN; a seat taken during COUNTDOWN, RUN or RESULTS waits for the next
+BUILD. The AFK timeout below means a late joiner can never hold BUILD
 open for long. (An empty roster would otherwise complete BUILD and RUN
 instantly, forever; BUILD only completes with at least one active player.)
 
@@ -127,7 +156,7 @@ After round 6's results everyone connected votes:
 - **Archive:** this level is archived with its scores, and the next game
   starts at round 1 on a copy of it, every surviving item still in place, to
   keep building on.
-- **Restart:** players choose a course again (SELECT), and the next game
+- **Restart:** players choose a course again (SELECT, keeping their seats), and the next game
   starts on it bare.
 
 Majority wins once everyone connected has voted, or after 30 s. A tie or

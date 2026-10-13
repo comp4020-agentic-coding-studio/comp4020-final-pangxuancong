@@ -55,24 +55,36 @@ if (!columns("level").includes("parent_id")) db.exec("ALTER TABLE level ADD COLU
 if (!columns("level").includes("outcome")) db.exec("ALTER TABLE level ADD COLUMN outcome TEXT");
 // which base course (src/shared/levels.ts)
 if (!columns("level").includes("layout")) db.exec("ALTER TABLE level ADD COLUMN layout INTEGER NOT NULL DEFAULT 1");
+// which room plays it; games from before rooms belong to the room MAIN
+if (!columns("level").includes("room")) db.exec("ALTER TABLE level ADD COLUMN room TEXT NOT NULL DEFAULT 'MAIN'");
 
 const now = (): string => new Date().toISOString();
 
 export interface LevelRow { id: number; round: number; parentId: number | null; layout: number }
 
-// the game in play, if any (with none, players choose a level first)
-export function currentLevel(): LevelRow | null {
-  const row = db.prepare("SELECT id, round, parent_id AS parentId, layout FROM level WHERE finished_at IS NULL ORDER BY id DESC LIMIT 1").get() as LevelRow | undefined;
+// a room's game in play, if any (with none, players choose a level first)
+export function currentLevel(room: string): LevelRow | null {
+  const row = db.prepare("SELECT id, round, parent_id AS parentId, layout FROM level WHERE room = ? AND finished_at IS NULL ORDER BY id DESC LIMIT 1").get(room) as LevelRow | undefined;
   return row ?? null;
+}
+
+// rooms with a game still in play, to reopen when the server starts
+export function roomsInPlay(): string[] {
+  return (db.prepare("SELECT DISTINCT room FROM level WHERE finished_at IS NULL").all() as { room: string }[]).map((r) => r.room);
+}
+
+// whether a room has ever had a game (a share link to it still works)
+export function roomExists(room: string): boolean {
+  return db.prepare("SELECT 1 FROM level WHERE room = ? LIMIT 1").get(room) !== undefined;
 }
 
 // A new game. Archived, it continues on the parent's course with a copy of
 // its surviving items (the archived level keeps its own); otherwise it starts
 // bare on the chosen course.
-export function startLevel(parent: LevelRow | null, layout: number): LevelRow {
+export function startLevel(room: string, parent: LevelRow | null, layout: number): LevelRow {
   const t = now();
   const course = parent?.layout ?? layout;
-  const { lastInsertRowid } = db.prepare("INSERT INTO level (round, parent_id, layout, created_at, updated_at) VALUES (1, ?, ?, ?, ?)").run(parent?.id ?? null, course, t, t);
+  const { lastInsertRowid } = db.prepare("INSERT INTO level (room, round, parent_id, layout, created_at, updated_at) VALUES (?, 1, ?, ?, ?, ?)").run(room, parent?.id ?? null, course, t, t);
   const id = Number(lastInsertRowid);
   if (parent) for (const item of readItems(parent.id)) insertItem(id, { ...item, id: randomUUID() });
   return { id, round: 1, parentId: parent?.id ?? null, layout: course };

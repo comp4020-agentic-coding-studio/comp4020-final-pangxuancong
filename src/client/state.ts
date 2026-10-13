@@ -26,6 +26,7 @@ export const store = {
 export const bus = {
   selectionChanged: (): void => {},
   pose: (_p: Pose): void => {},
+  pick: (_layout: number | null): void => {}, // the map sign I stand under, choosing a level
   result: (_r: { result: "DEAD" | "FINISHED"; x: number; y: number; by?: string }): void => {},
   say: (_text: string, _error?: boolean): void => {},
 };
