@@ -1,9 +1,16 @@
 # Chain Reaction
 
-Chain Reaction is a shared digital Rube Goldberg machine. Several visitors work
-on the same machine at once, but nobody controls all of it. One person tunes a
-ramp, another the spacing of a row of dominoes, another a spring, a fan or a
-gate. A run only succeeds when those small decisions work together.
+<!-- Draft: everything outside "What good means here" was rewritten on
+     2026-10-13 to describe the platformer as it is. It states what the game
+     does; the arguments for why are yours to put in your own words. -->
+
+**Build the level together. Survive what you built.**
+
+Chain Reaction is a small real-time multiplayer platformer for up to four
+people. Everyone shares one obstacle course. In each round, every player adds
+one piece to it (or removes one), and then everyone runs it at the same time,
+trying to reach the flag. The level keeps every piece from round to round, so
+it becomes whatever the group made of it.
 
 The idea came from playing *Ultimate Chicken Horse* online with my roommates. In
 that game everyone adds a piece to a shared level, and every piece can help or
@@ -25,58 +32,87 @@ one person makes should reach everyone else within about a second, and the
 visuals and animation have to be crafted and smooth, because motion is how
 players read cause and effect.
 
-## Interdependence, not a combination lock
+## How a game works
 
-The worst version of this game is five people guessing a PIN: each mechanism
-has one hidden correct value, and success means finding all five. Here a
-mechanism's working range depends on what arrives from the one before it. A
-shallower ramp sends a slower ball, which needs a stronger spring. There is no
-single answer, only a region of settings that work, so players tune with each
-other rather than beside each other.
+1. **Choose a level.** Everyone picks one of three courses: The Gaps, The
+   Tower or The Swing. Most picks wins.
+2. **Build.** Each player gets one action: place a piece (Platform, Spring,
+   Spike, Fan, Moving Platform or Launcher), use the Demolition Bomb on any
+   piece already placed, or skip. Other players see what you are considering
+   while you decide. Once placed, a piece belongs to the level.
+3. **Run.** After a short countdown everyone runs at once. A run ends when
+   every player has reached the flag, died, or left.
+4. **Round end.** Points are shown, and the next build starts on the same
+   level.
 
-## Failure should invite another attempt
+A game ends at the end of the round in which someone reaches 4 points, or after
+six rounds. Then everyone votes: keep building on this level in the next game,
+or choose a new one.
 
-A failed run should explain itself through motion before text explains it.
-Failure is
-useful when it suggests what to try next, including that my part only works if
-someone else's changes too.
+## Help or sabotage
 
-Success belongs to the machine, not to a player. There is no personal score, XP
-or leaderboard.
+The game permits cooperation and sabotage without deciding which is correct. A
+piece can open a route for everyone or close one, and the same Spring can do
+both.
 
-## The shared object should outlive the participants
+Scoring rewards both sides:
 
-Settings and attempts belong to the room; control of a mechanism is temporary.
-A later visitor inherits a machine shaped by earlier ones, without accounts.
+- **+1** for reaching the flag;
+- **+0.2** to the player whose Spike or Launcher kills someone else;
+- **Too simple:** if everyone who ran (two or more) reached the flag, nobody
+  scores that round.
 
-But a deterministic machine, once solved, stays solved. My current direction is
-to archive a completed machine with its attempt count and start a new one with
-the same layout and a different internal challenge. What should persist is the
-room's history of machines it finished together, not one solved answer.
+The level may become impossible. There is no check that a path still exists.
+The Demolition Bomb is how players get out of a dead end, and it is an
+ordinary build action.
+
+## The level outlives the round
+
+Pieces stay from round to round. A game can be archived: the next game then
+starts on a copy of the level with every piece still in place. Scores belong to
+one game only, and nothing carries into the next.
+
+During each build, small marks show where players died in the last run.
+
+## Seeing each other
+
+Shared changes reach every open session within about a second, without a
+reload: placements, demolitions, the round's phase, who has built and who is
+still running. During a run, other players move on your screen as they move on
+theirs.
+
+The level is larger than the screen. While you run, the camera follows you, and
+players outside the view show as badges on the edge of the screen. After you
+die or finish, the camera follows someone still running.
 
 ## What is enforced and what is judged
 
-Some claims are checked automatically: settings stay within their bounds, and
-the machine's state and attempts survive for the next visitor. Later checks will
-cover one operator per mechanism, changes reaching other sessions, and every
-viewer seeing the same run.
+Checked automatically (`pnpm check`):
 
-Others are judged through crit feedback and playtesting: whether cause and effect
-are readable, the machine feels tactile, other people are felt through the
-object, and it avoids becoming a combination lock.
+- placements are rejected only when technically invalid;
+- one build action per player per round;
+- rounds move on when players are done, with no gameplay timer;
+- scoring, "too simple" and the 4-point end;
+- each base course can be finished before anyone builds;
+- a placed piece reaches another client within a second and persists.
+
+Judged by playing and crit feedback: whether a piece feels like a real choice,
+whether failure changes what people build next, and whether the movement feels
+fair.
 
 ## What I chose not to build
 
-No chat, profiles, leaderboards or realistic physics. The hardest cut was free
-placement. In *Ultimate Chicken Horse*, choosing and placing your own piece is
-half the fun. Here every part is fixed and players only tune parameters. That
-gives up some creativity for a machine that stays readable when several people
-act at once, and for a scope I can finish well.
+- No chat, accounts, profiles, all-time leaderboards, rooms or matchmaking.
+- No pathfinding and no "there must always be a path" rule.
+- No collisions between players.
+- No general physics engine. Platformer physics (Phaser Arcade) only.
 
 ## Where it is now
 
-This first version has one ramp and one cup. Set the angle and run it; the angle
-and every attempt are saved, so you will see what the last visitor left.
+The game has three courses, six pieces plus the Demolition Bomb, four
+characters (Chicken, Big Dog, Pot Horse and Dabai), scores, and the
+archive-or-restart vote. It is deployed and playable by up to four people at
+once. Any extra visitors watch and take a free seat at the next build.
 
 ## Sources
 
