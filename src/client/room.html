@@ -35,6 +35,20 @@
           <div id="game" class="game"></div>
           <div id="overlay" class="overlay" hidden></div>
         </div>
+        <!-- touch screens: run and jump (shown only while you have a character to move) -->
+        <div id="pad" class="pad" hidden>
+          <div class="pad-dir">
+            <button type="button" class="pad-btn" data-pad="left" aria-label="Run left">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 L8 12 L15 19" /></svg>
+            </button>
+            <button type="button" class="pad-btn" data-pad="right" aria-label="Run right">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5 L16 12 L9 19" /></svg>
+            </button>
+          </div>
+          <button type="button" class="pad-btn jump" data-pad="jump" aria-label="Jump">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 15 L12 8 L19 15" /></svg><span>Jump</span>
+          </button>
+        </div>
 
         <aside class="panel round-panel" aria-label="This round">
           <p class="round" id="round">Round –</p>

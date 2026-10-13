@@ -22,6 +22,11 @@ export const store = {
   previews: new Map<string, PreviewView>(),
 };
 
+// On-screen controls for touch screens (ui.ts sets them, the scene reads them
+// alongside the keyboard). `jumps` counts presses, so a tap between two
+// frames is never lost.
+export const touch = { left: false, right: false, jumps: 0 };
+
 // Set by main.ts; the scene calls them.
 export const bus = {
   selectionChanged: (): void => {},

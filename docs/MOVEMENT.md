@@ -63,3 +63,13 @@ Other clients interpolate remote characters and never collide with them.
 The local client detects hazard/bounds contact and the goal trigger, and
 reports RUNNING → DEAD or RUNNING → FINISHED. The server records and
 broadcasts it. No anti-cheat validation.
+
+## Controls
+
+Keyboard: arrows or A/D to run, Up, W or Space to jump. Touch screens (a
+coarse pointer, or from the first touch) get on-screen buttons under the
+level: left and right held, jump tapped, each press counted so a quick tap
+between frames is never lost. They show only while there is a character of
+yours to move (the lobby, the countdown, your run). In BUILD a finger taps
+to place, and drags the view when no piece is chosen. On a narrow screen the
+level comes first, the buttons under it, and the cards float over the page.

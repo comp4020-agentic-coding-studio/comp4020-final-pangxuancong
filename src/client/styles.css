@@ -435,6 +435,13 @@ button.link { margin-left: 0.4rem; padding: 0; border: 0; background: none; colo
 .rooms .go { font: 600 0.8rem var(--sans); text-transform: uppercase; letter-spacing: 0.06em; }
 .rooms .empty { padding: 0.8rem; color: var(--ink-soft); font-size: 0.9rem; text-align: center; }
 @media (max-width: 640px) {
+  .desk { padding: 0.6rem 0.5rem 1.5rem; }
+  .stage { padding: 6px; border-radius: 10px; }
+  /* the level is small on a phone: cards float over the page instead */
+  .overlay:has(.card) { position: fixed; inset: 0; z-index: 50; padding: 0.6rem; background: rgba(43, 42, 40, 0.3); }
+  .card { padding: 0.8rem 0.9rem; min-width: 0 !important; width: 100%; max-height: 92vh; overflow: auto; }
+  .card h2 { font-size: 1.15rem; }
+  .wheel { width: min(13rem, 52vw); }
   .rooms a { grid-template-columns: 4rem minmax(0, 1fr) auto; }
   .rooms .seats { display: none; }
   .hero-row { grid-template-columns: repeat(2, 1fr); }
@@ -467,17 +474,57 @@ button.link { margin-left: 0.4rem; padding: 0; border: 0; background: none; colo
 .card.final .vote, .card.final .tally { opacity: 0; transition: opacity 400ms; pointer-events: none; }
 .card.final.ready .vote, .card.final.ready .tally { opacity: 1; pointer-events: auto; }
 
+/* touch screens: run and jump buttons under the level, thumbs apart */
+.pad {
+  grid-column: 2;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-top: -0.3rem;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: none;
+}
+.pad[hidden] { display: none; }
+.pad-dir { display: flex; gap: 0.7rem; }
+.pad-btn {
+  display: grid;
+  place-items: center;
+  width: 4.6rem;
+  height: 4.6rem;
+  padding: 0;
+  border: 2px solid var(--wood-deep);
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, var(--wood-light), var(--wood) 70%);
+  box-shadow: 0 4px 0 var(--wood-deep), 0 8px 14px -8px rgba(43, 42, 40, 0.6);
+  color: #3d2a18;
+  transition: transform 60ms, box-shadow 60ms;
+  touch-action: none;
+}
+.pad-btn svg { width: 2rem; height: 2rem; fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.pad-btn.down { transform: translateY(3px); box-shadow: 0 1px 0 var(--wood-deep), 0 3px 6px -4px rgba(43, 42, 40, 0.6); background: var(--wood-dark); color: var(--paper); }
+.pad-btn.jump { width: 5.6rem; height: 5.6rem; background: radial-gradient(circle at 35% 30%, #f0c66a, var(--brass) 70%); }
+.pad-btn.jump span { font: 700 0.7rem var(--sans); text-transform: uppercase; letter-spacing: 0.06em; margin-top: -0.6rem; }
+/* on a touch screen the hover-only hints and the keyboard help are noise */
+body.touch .help kbd { display: none; }
+
 @media (max-width: 1100px) {
-  .table { grid-template-columns: 1fr; }
-  .stage { order: -1; }
+  /* minmax(0, …): the canvas must shrink to the column, not widen it */
+  .table { grid-template-columns: minmax(0, 1fr); }
+  .stage { order: -2; }
+  .pad { order: -1; grid-column: 1; margin-top: 0; padding: 0 0.3rem; }
   .tray { grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); }
   .actions { grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); }
   .steps { grid-template-columns: repeat(2, 1fr); }
 }
-@media (prefers-reduced-motion: reduce) {
-  .count { animation: none; }
-  .piece, .steps li, .board .row, .board .bar span, .card.round, .track .now, .track-row .gain, .hero, .rooms a, .wheel .slice { transition: none; }
-  .stamp { animation: none; opacity: 0; }
-  .wheel .voter, .card.draw.landed .drawn { animation: none; }
-  .card.round.simple .body { animation: none; }
-}
+/* reduced motion: the system setting, unless the room header's switch says
+   otherwise (motion.ts sets the class). The stamp still shows, just without
+   its bounce: it carries the round's result. */
+.reduce-motion .count { animation: none; }
+.reduce-motion :is(.piece, .steps li, .board .row, .board .bar span, .card.round, .track .now, .track-row .gain, .hero, .rooms a, .wheel .slice) { transition: none; }
+.reduce-motion .stamp { animation: stamp-still 2600ms linear both; }
+@keyframes stamp-still { 0%, 62% { opacity: 1; } 100% { opacity: 0; } }
+.reduce-motion :is(.wheel .voter, .card.draw.landed .drawn) { animation: none; }
+.reduce-motion .card.round.simple .body { animation: none; }

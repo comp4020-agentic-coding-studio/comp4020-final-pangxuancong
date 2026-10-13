@@ -6,15 +6,70 @@ import type { BuildChoice } from "../shared/level.ts";
 import { levelById } from "../shared/levels.ts";
 import type { PlayerView, Snapshot } from "../shared/protocol.ts";
 import { DRAW_INTRO_MS, DRAW_SPIN_MS, type Draw, type Vote } from "../shared/rounds.ts";
-import { chime, isMuted, plop, setMuted, tick } from "./sound.ts";
-import { iCanBuild, myPlayer, store } from "./state.ts";
+import { reducedMotion, setReducedMotion } from "./motion.ts";
+import { chime, isMuted, plop, setMuted, sfx, tick } from "./sound.ts";
+import { iCanBuild, myPlayer, store, touch } from "./state.ts";
 
 const $ = (id: string): HTMLElement => document.getElementById(id)!;
 const el = {
   where: $("where"), round: $("round"), pill: $("pill"), roster: $("roster"), guide: $("guide"), overlay: $("overlay"),
   tray: $("tray"), trayPanel: document.querySelector<HTMLElement>(".tray-panel")!, steps: $("steps"),
   rotate: $("rotate") as HTMLButtonElement, cancel: $("cancel") as HTMLButtonElement, skip: $("skip") as HTMLButtonElement,
-  commit: $("commit") as HTMLButtonElement, message: $("message"), help: $("help"),
+  commit: $("commit") as HTMLButtonElement, message: $("message"), help: $("help"), pad: $("pad"),
+};
+
+// ---------- touch controls ----------
+// A touch screen gets on-screen buttons: left and right held, jump tapped
+// (each press counts, so a quick tap is never missed). They show from the
+// first touch, or on a coarse pointer, and only while there is a character
+// of yours to move.
+let touchScreen = window.matchMedia("(pointer: coarse)").matches;
+addEventListener("touchstart", () => {
+  if (touchScreen) return;
+  touchScreen = true;
+  render();
+}, { passive: true, once: true });
+
+function wirePad(): void {
+  const held = new Map<number, "left" | "right">();
+  const sync = (): void => {
+    touch.left = [...held.values()].includes("left");
+    touch.right = [...held.values()].includes("right");
+    for (const b of el.pad.querySelectorAll<HTMLElement>("[data-pad=left], [data-pad=right]")) b.classList.toggle("down", touch[b.dataset.pad as "left" | "right"]);
+  };
+  el.pad.addEventListener("pointerdown", (e) => {
+    const b = (e.target as HTMLElement).closest<HTMLElement>("[data-pad]");
+    if (!b) return;
+    e.preventDefault();
+    try {
+      b.setPointerCapture(e.pointerId); // keep the press if the thumb slides off
+    } catch {
+      // not a capturable pointer; the press still counts
+    }
+    const what = b.dataset.pad;
+    if (what === "jump") {
+      touch.jumps++;
+      b.classList.add("down");
+      setTimeout(() => b.classList.remove("down"), 120);
+    } else {
+      held.set(e.pointerId, what as "left" | "right");
+      sync();
+    }
+  });
+  const up = (e: PointerEvent): void => {
+    if (held.delete(e.pointerId)) sync();
+  };
+  for (const t of ["pointerup", "pointercancel", "lostpointercapture"] as const) el.pad.addEventListener(t, up);
+  // a long press must not open a menu or select text
+  el.pad.addEventListener("contextmenu", (e) => e.preventDefault());
+}
+wirePad();
+
+// is there a runner of mine on screen right now
+const moving = (snap: Snapshot): boolean => {
+  const me = snap.players.find((p) => p.id === store.me);
+  if (snap.phase === "SELECT" || snap.phase === "DRAW") return me?.character != null;
+  return (snap.phase === "COUNTDOWN" || snap.phase === "RUN") && me?.run === "RUNNING";
 };
 
 export const PIECES: { choice: BuildChoice; name: string; icon: string }[] = [
@@ -128,6 +183,16 @@ export function render(): void {
     const step = li.dataset.step;
     li.classList.toggle("now", step === snap.phase || (step === "RESULTS" && snap.phase === "LEVEL_END") || (step === "BUILD" && choosing));
   }
+
+  const showPad = touchScreen && moving(snap);
+  if (el.pad.hidden === showPad) {
+    el.pad.hidden = !showPad;
+    if (!showPad) {
+      touch.left = touch.right = false;
+      touch.jumps = 0;
+    }
+  }
+  document.body.classList.toggle("touch", touchScreen);
 
   const building = iCanBuild();
   el.trayPanel.classList.toggle("idle", !building);
@@ -293,6 +358,10 @@ export function renderPhase(): void {
   // (Compare with what was generated, not innerHTML, which the browser rewrites.)
   if (guide !== lastGuide) el.guide.innerHTML = lastGuide = guide;
   if (overlay !== lastOverlay) {
+    // the countdown beeps once per number, and higher as the run starts
+    const count = overlay.match(/^<div class="count">(\d)/)?.[1];
+    if (count) sfx.count(false);
+    else if (lastOverlay.startsWith('<div class="count">') && snap.phase === "RUN") sfx.count(true);
     el.overlay.innerHTML = lastOverlay = overlay;
     const final = el.overlay.querySelector<HTMLElement>(".final");
     if (final) revealScores(final);
@@ -308,7 +377,6 @@ export function renderPhase(): void {
   el.overlay.hidden = overlay === "";
 }
 
-const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
 // The final table, revealed from last place to first: each row slides in,
 // its bar grows and its points count up; then the leader is lit and the vote
@@ -454,9 +522,14 @@ function wheel(draw: Draw, snap: Snapshot): string {
 
 // The wheel's angle in turns at `ms` into DRAW: still while the voters drop
 // in, then TURNS full turns and the rest, easing out to stop at the drawn spot.
+// Reduced motion keeps the turn (it is the draw) but makes it short and slow
+// to start: one turn and the rest, over the last part of the spin.
 function angleAt(ms: number, end: number): number {
-  const k = Math.min(1, Math.max(0, (ms - DRAW_INTRO_MS) / DRAW_SPIN_MS));
-  return (TURNS + end) * (1 - (1 - k) ** 4);
+  const gentle = reducedMotion.matches;
+  const spin = gentle ? DRAW_SPIN_MS * 0.5 : DRAW_SPIN_MS;
+  const from = DRAW_INTRO_MS + (gentle ? DRAW_SPIN_MS - spin : 0);
+  const k = Math.min(1, Math.max(0, (ms - from) / spin));
+  return ((gentle ? 1 : TURNS) + end) * (gentle ? 1 - (1 - k) ** 2 : 1 - (1 - k) ** 4);
 }
 
 function spinDraw(card: HTMLElement, draw: Draw, elapsedAtArrival: number): void {
@@ -476,14 +549,7 @@ function spinDraw(card: HTMLElement, draw: Draw, elapsedAtArrival: number): void
     chime();
   };
   // the voters drop in, one after another
-  if (!reducedMotion.matches) {
-    card.querySelectorAll<SVGGElement>(".voter").forEach((v, i) => setTimeout(plop, 120 + i * 140));
-  }
-  if (reducedMotion.matches) {
-    spinner.setAttribute("transform", `rotate(${(end * 360).toFixed(2)})`);
-    land();
-    return;
-  }
+  card.querySelectorAll<SVGGElement>(".voter").forEach((_v, i) => setTimeout(plop, 120 + i * 140));
   // which slice is under the pointer at an angle: for the peg ticks
   const under = (a: number): number => {
     const at = (((1 - (a % 1)) % 1) + 1) % 1;
@@ -502,7 +568,7 @@ function spinDraw(card: HTMLElement, draw: Draw, elapsedAtArrival: number): void
       tick(0.9 + 0.2 * Math.random());
     }
     // the pointer kicks back on each peg, and settles
-    flick *= 0.82;
+    flick = reducedMotion.matches ? 0 : flick * 0.82;
     pointer.setAttribute("transform", `translate(0 ${-(WHEEL_R + 4)}) rotate(${(-22 * flick).toFixed(1)})`);
     if (ms < DRAW_INTRO_MS + DRAW_SPIN_MS) requestAnimationFrame(step);
     else land();
@@ -524,7 +590,20 @@ export function muteButton(): void {
     show();
   });
   show();
-  el.where.parentElement!.append(b);
+  // and the motion switch
+  const m = document.createElement("button");
+  m.type = "button";
+  m.className = "copy mute";
+  const showMotion = (): void => {
+    m.textContent = reducedMotion.matches ? "Motion: reduced" : "Motion: full";
+    m.title = "Animations follow your system setting until you choose here";
+  };
+  m.addEventListener("click", () => {
+    setReducedMotion(!reducedMotion.matches);
+    showMotion();
+  });
+  showMotion();
+  el.where.parentElement!.append(b, m);
 }
 
 export function onVote(fn: (v: Vote) => void, onSeat: (character: number | null) => void): void {

@@ -11,7 +11,9 @@ import { type Block, LOBBY, LOBBY_COLS, type LevelDef, levelById } from "../shar
 import { MOVEMENT, type Side, canWallJump, wallJumpVelocity } from "../shared/movement.ts";
 import type { Phase } from "../shared/rounds.ts";
 import { C, type Pose, drawCharacter, drawCourseBlock, drawFanBlades, drawItem, drawMovingPlank, drawShot, drawTravel, hex } from "./draw.ts";
-import { bus, iCanBuild, store } from "./state.ts";
+import { reducedMotion } from "./motion.ts";
+import { sfx } from "./sound.ts";
+import { bus, iCanBuild, store, touch } from "./state.ts";
 
 const POSE_EVERY_MS = 80; // ~12 a second
 const INTERP_DELAY_MS = 110;
@@ -23,7 +25,6 @@ const blockBody = (b: Block): PixelRect => {
   const r = cellToPixels(b);
   return b.style === "shelf" ? { ...r, h: 20 } : b.style === "peg" ? { ...r, h: 16 } : r;
 };
-const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
 interface PlacedView {
   item: Item;
@@ -177,7 +178,9 @@ export class LevelScene extends Phaser.Scene {
       this.pointerMoved(p.worldX, p.worldY);
     });
     this.input.on("pointerdown", (p: Phaser.Input.Pointer) => {
-      if (p.rightButtonDown() || p.middleButtonDown()) this.dragFrom = { x: p.x, y: p.y };
+      // a finger with no piece chosen drags the view, like a right drag
+      const fingerPan = p.wasTouch && !store.sel.choice && !this.runningMyself();
+      if (p.rightButtonDown() || p.middleButtonDown() || fingerPan) this.dragFrom = { x: p.x, y: p.y };
       else this.pointerDown(p.worldX, p.worldY);
     });
     this.input.on("pointerup", () => (this.dragFrom = null));
@@ -637,6 +640,7 @@ export class LevelScene extends Phaser.Scene {
       const views: Phaser.GameObjects.GameObject[] = [pv.view, ...(pv.plank ? [pv.plank] : [])];
       const f = footprint(pv.item);
       this.puff((f.col + f.w / 2) * CELL, (f.row + f.h / 2) * CELL, C.woodDark);
+      sfx.demolish();
       if (reducedMotion.matches) views.forEach((v) => v.destroy());
       else this.tweens.add({ targets: views, alpha: 0, duration: 240, ease: "Quad.in", onComplete: () => views.forEach((v) => v.destroy()) });
     }
@@ -663,7 +667,8 @@ export class LevelScene extends Phaser.Scene {
       }
       const blades = item.type === "fan" ? this.add.graphics().setDepth(9) : undefined;
       this.placed.set(item.id, { item, view, solid, blades, plank, fixed: item.id.startsWith("fixture-") });
-      // newly committed while we watch: it settles into place
+      // newly committed while we watch: it settles into place, with a tap
+      if (this.phase === "BUILD" && !item.id.startsWith("fixture-")) sfx.place();
       if (this.phase && !reducedMotion.matches && !item.id.startsWith("fixture-")) {
         view.y -= 14;
         view.alpha = 0.3;
@@ -866,6 +871,7 @@ export class LevelScene extends Phaser.Scene {
     const top = (spring.body as Phaser.Physics.Arcade.StaticBody).top;
     if (b.bottom > top + 6) return; // only the pad launches
     b.setVelocityY(-MOVEMENT.springVelocity);
+    sfx.spring();
     this.spark(l.rect.x, b.bottom, C.mustard, 8, { min: 200, max: 340 });
     const pv = [...this.placed.values()].find((v) => v.solid === spring);
     if (pv && !reducedMotion.matches) this.tweens.add({ targets: pv.view, scaleY: 0.6, duration: 70, yoyo: true, ease: "Quad.out" });
@@ -884,6 +890,7 @@ export class LevelScene extends Phaser.Scene {
     b.setMaxVelocity(2000, 2000);
     const side = dx !== 0 ? dx : l.facing * -1 || 1;
     b.setVelocity(side * SHOT_KNOCKBACK.x, dy > 0 ? SHOT_KNOCKBACK.x * 0.6 : SHOT_KNOCKBACK.y);
+    sfx.flung();
     this.spark(l.rect.x, l.rect.y, C.mustard, 14, { min: 0, max: 360 });
     if (!reducedMotion.matches) this.cameras.main.shake(180, 0.006);
   }
@@ -909,6 +916,7 @@ export class LevelScene extends Phaser.Scene {
     l.flung = null;
     const x = l.rect.x, y = l.rect.y + 14;
     if (!fromServer) bus.result({ result: "DEAD", x, y: Math.min(y, HEIGHT), by });
+    sfx.die();
     this.puff(x, Math.min(y, HEIGHT - 10) - 14, l.colour);
     this.spark(x, Math.min(y, HEIGHT - 10) - 16, l.colour, 12, { min: 0, max: 360 });
     l.rect.destroy();
@@ -933,6 +941,7 @@ export class LevelScene extends Phaser.Scene {
     // no more input, but it still drops onto the ledge by the flag
     (l.rect.body as Phaser.Physics.Arcade.Body).setVelocityX(0);
     bus.result({ result: "FINISHED", x: l.rect.x, y: l.rect.y + 14 });
+    sfx.goal();
     if (!reducedMotion.matches) {
       this.tweens.add({ targets: l.figure, y: -18, duration: 180, yoyo: true, ease: "Quad.out" });
       this.tweens.add({ targets: this.flag, scaleY: 1.2, duration: 160, yoyo: true });
@@ -1309,8 +1318,11 @@ export class LevelScene extends Phaser.Scene {
     const l = this.local!;
     const b = l.rect.body as Phaser.Physics.Arcade.Body;
     const k = this.keys;
-    const dir = (k.right.isDown || k.d.isDown ? 1 : 0) - (k.left.isDown || k.a.isDown ? 1 : 0);
-    const jump = Phaser.Input.Keyboard.JustDown(k.up) || Phaser.Input.Keyboard.JustDown(k.w) || Phaser.Input.Keyboard.JustDown(k.space);
+    // the keyboard, or the on-screen buttons on a touch screen
+    const dir = (k.right.isDown || k.d.isDown || touch.right ? 1 : 0) - (k.left.isDown || k.a.isDown || touch.left ? 1 : 0);
+    const tapped = touch.jumps > 0;
+    touch.jumps = 0;
+    const jump = tapped || Phaser.Input.Keyboard.JustDown(k.up) || Phaser.Input.Keyboard.JustDown(k.w) || Phaser.Input.Keyboard.JustDown(k.space);
     const onGround = b.blocked.down || b.touching.down;
 
     // fans: inside a zone, the wind sets a drift (sideways) or lifts and presses (up, down)
@@ -1350,8 +1362,10 @@ export class LevelScene extends Phaser.Scene {
       if (onGround) {
         b.setVelocityY(-MOVEMENT.jumpVelocity);
         this.jumpDust(feetX, feetY);
+        sfx.jump();
       } else if (canWallJump(now, wallSide !== 0, l.lastWallTouchAt)) {
         const v = wallJumpVelocity(l.lastWallSide, dir === l.lastWallSide);
+        sfx.wallKick();
         b.setVelocity(v.vx, v.vy);
         // a kick off the wall
         this.spark(feetX + l.lastWallSide * 10, feetY - 14, C.woodLight, 6, l.lastWallSide > 0 ? { min: 120, max: 240 } : { min: -60, max: 60 });
@@ -1362,7 +1376,10 @@ export class LevelScene extends Phaser.Scene {
     // landing: a squash and some dust; running: a little dust behind
     if (!onGround) l.fallSpeed = Math.max(l.fallSpeed, b.velocity.y);
     if (onGround && !l.wasOnGround) {
-      if (l.fallSpeed > 150) this.landDust(feetX, feetY, l.fallSpeed);
+      if (l.fallSpeed > 150) {
+        this.landDust(feetX, feetY, l.fallSpeed);
+        sfx.land(l.fallSpeed);
+      }
       if (!reducedMotion.matches) {
         l.view.setScale(1.12, 0.88);
         this.tweens.add({ targets: l.view, scaleX: 1, scaleY: 1, duration: 140, ease: "Quad.out" });

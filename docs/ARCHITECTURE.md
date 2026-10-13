@@ -9,6 +9,8 @@ Browser (src/client, built by Vite)
 │   Parts Tray, overlays (character choice, map draw, round and final cards)
 ├── main.ts: room from the URL, identity per room (session + localStorage),
 │   socket, keyboard, build actions
+├── sound.ts, motion.ts: synthesised sounds with a mute; the reduced-motion
+│   choice (system setting or the header switch)
 ├── ui.ts: renders the HTML shell from the snapshot
 ├── scene.ts: Phaser scene: the lobby room with its map signs (SELECT, DRAW)
 │   or the level, items, previews, local player (Arcade Physics), remote

@@ -41,7 +41,13 @@ Playable build-and-run platformer, pushed and deployed to Fly on 2026-10-13
   and four seats. Seats are the four characters, chosen on entry. Before a
   game seated players walk a lobby room and stand under a map sign to vote;
   a split vote spins a wheel (slices sized by votes, voters' heads on the
-  rim, ticks and a chime; Sound on/off in the header). A dropped connection
+  rim, ticks and a chime; Sound on/off in the header).
+- Touch screens get run and jump buttons; on a phone the level fits the
+  screen and cards float over the page. Level sounds (jump, land, wall kick,
+  spring, death, launcher hit, goal, placing, the Bomb, countdown) are
+  synthesised, with a mute. A Motion switch overrides the system's reduced
+  motion; under reduced motion the map wheel still turns, gently (it used to
+  skip to the result, which is why the human saw no spin). A dropped connection
   holds the round 8 s and keeps seat, character and points 2 minutes
   (`docs/decisions/0002-rooms-and-seats.md`).
 
@@ -78,7 +84,7 @@ Playable build-and-run platformer, pushed and deployed to Fly on 2026-10-13
 - Persistent: levels (games), items (demolished kept as history), score
   events. Ephemeral: players, positions, statuses, previews, traces, votes.
 
-Not built yet: sound, most motion polish, activity logging.
+Not built yet: activity logging; the fan and moving-platform sounds.
 
 ## Still to do (human)
 
