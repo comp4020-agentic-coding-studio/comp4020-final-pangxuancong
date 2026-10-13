@@ -61,7 +61,9 @@ it("S1, S2, S5: a placed piece reaches the other client, persists, and can be de
   const find = (c: Client) => c.snap?.items.find((i) => i.col === spot!.col && i.row === spot!.row && i.type === "platform");
   await until(() => !!find(b), 1000, "B to see A's piece within a second");
   expect(Date.now() - sent).toBeLessThan(1000);
-  expect(me(a)?.build).toBe("PLACED");
+  // each socket gets the broadcast on its own; over a real network A's copy
+  // can land after B's
+  await until(() => me(a)?.build === "PLACED", 1000, "A to see itself PLACED");
 
   // S1: it is in the persistent level, not just in a socket message
   const level = (await (await fetch(new URL("/api/level", baseUrl))).json()) as { items: { id: string }[] };

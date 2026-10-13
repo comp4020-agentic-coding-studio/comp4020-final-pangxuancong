@@ -44,7 +44,10 @@ also a player, and holds BUILD until they act or the AFK limit passes.
 
 S3, S4, S7–S9 test the pure round state machine and scoring with explicit times.
 `spec/realtime.test.ts` connects two real clients and needs the server to
-reach a BUILD within 30 s: run it with nobody else mid-round. Persistence
+reach a BUILD within 30 s: run it with nobody else mid-round. Each socket
+receives a broadcast on its own, so over a real network one client's copy can
+land after the other's: wait for every state a test asserts, never assert a
+second client's view straight after the first one's arrived (2026-10-13). Persistence
 across a server restart was checked by hand (2026-10-06).
 
 Persistence across a real Fly redeploy is a manual check: place, deploy,
