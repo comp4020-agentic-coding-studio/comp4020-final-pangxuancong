@@ -56,8 +56,8 @@ the live site and the pushed repo are still the crit 8 machine (tag `crit-8`).
 - RUN: wall slide, 250 ms wall-jump grace, climb by jumping into a wall;
   spikes and falls kill; the flag finishes. Idle 30 s drops out.
 - Scores: +1 for the flag, +0.2 to a spike's or launcher's placer for each
-  other player it kills. If everyone who ran made it, nobody scores that
-  round ("Too simple" stamp). First to 4 points ends the game at that
+  other player it kills. If everyone who ran made it (two or more), nobody
+  scores that round ("Too simple" stamp); alone, the flag still scores. First to 4 points ends the game at that
   round's end. The round card animates each player's bar toward 4.
 - Launcher (key 6): one shot a second in one of four directions; a hit
   knocks the runner out of the level.
@@ -211,3 +211,11 @@ Tower, Chicken finishing four rounds while Big Dog fell ended the game after
 round 4 ("Chicken reached 4 points in round 4"); no console errors. Not
 checked: a shot fired at someone else's runner seen from a third client in
 real network lag, a hit while riding a moving plank, real people.
+
+2026-10-13, local: solo scoring and no "What is this?" link. "Too simple"
+now needs two or more runners. `pnpm typecheck` and `pnpm check` (41 tests)
+green against a separate server (port 8092). Browser, one session: four
+solo rounds on The Gaps scored +1 each with no stamp, and the game ended
+after round 4 ("Chicken reached 4 points in round 4"); the header has no
+README link (`/readme/` itself is still served, as the course requires); no
+console errors.

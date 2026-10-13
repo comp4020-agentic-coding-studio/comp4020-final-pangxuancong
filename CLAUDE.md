@@ -50,7 +50,8 @@ Loop and rounds:
   or restart bare.
 - Scores (+1 finish, +0.2 per other player killed by your spike or
   launcher) live inside one game only. A round in which everyone who ran
-  reached the flag scores nobody ("too simple") (`docs/GAME_LOOP.md`).
+  (two or more) reached the flag scores nobody ("too simple")
+  (`docs/GAME_LOOP.md`).
 - A committed placement belongs to the level and cannot be dragged again.
 
 Level validity:

@@ -259,13 +259,30 @@ it("calls a round too simple when everyone who ran reached the flag, and holds i
   expect(tick(s, t + RESULTS_MS)).toBeNull(); // the stamp gets its time
   expect(tick(s, t + RESULTS_MS + STAMP_MS)?.to).toBe("BUILD");
 
-  // one death and it is a real round; someone who left does not count
+  // someone who left does not count, and one runner left alone scores
   for (const id of ["a", "b"]) act(s, id, "SKIPPED");
   t = toRun(s, t + RESULTS_MS + STAMP_MS);
   report(s, "a", "FINISHED");
   leave(s, "b");
-  expect(tooSimple(s)).toBe(true);
-  expect(tick(s, ++t)).toMatchObject({ tooSimple: true });
+  expect(tooSimple(s)).toBe(false);
+  expect(tick(s, ++t)).toMatchObject({ tooSimple: false });
+});
+
+it("lets a player alone score for the flag: too simple needs two runners", () => {
+  const s = newRoundState(1, 0);
+  join(s, "a", "A", 0);
+  act(s, "a", "SKIPPED");
+  let t = toRun(s, 0);
+  report(s, "a", "FINISHED");
+  expect(tooSimple(s)).toBe(false);
+  expect(tick(s, ++t)).toEqual({ to: "RESULTS", levelDone: false, tooSimple: false });
+  // three of three is still too simple
+  const three = twoBuilding();
+  join(three, "c", "C", 0);
+  for (const id of ["a", "b", "c"]) act(three, id, "SKIPPED");
+  t = toRun(three, 0);
+  for (const id of ["a", "b", "c"]) report(three, id, "FINISHED");
+  expect(tooSimple(three)).toBe(true);
 });
 
 it("ends the game early once someone has the points to win, at the end of that round", () => {

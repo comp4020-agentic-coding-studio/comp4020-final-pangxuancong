@@ -182,9 +182,10 @@ export const runComplete = (s: RoundState): boolean => activePlayers(s).every((p
 
 // Everyone who stayed in the run reached the flag: the level was too simple,
 // and nobody scores that round. Someone who left does not count either way.
+// It takes at least two runners: playing alone, the flag still scores.
 export const tooSimple = (s: RoundState): boolean => {
   const ran = activePlayers(s).filter((p) => p.run !== "DISCONNECTED");
-  return ran.length > 0 && ran.every((p) => p.run === "FINISHED");
+  return ran.length > 1 && ran.every((p) => p.run === "FINISHED");
 };
 
 // Applies timeouts and moves to the next phase when its condition holds.

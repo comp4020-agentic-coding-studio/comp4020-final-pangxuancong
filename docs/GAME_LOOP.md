@@ -99,8 +99,9 @@ Within one game:
 - each other player killed by a Spike or Launcher you placed: **+0.2**
   points. Dying on your own trap scores nothing; falls, fan pushes and the
   course's own pieces score nobody;
-- **too simple:** if everyone who ran this round reached the flag (players
-  who disconnected do not count either way), nobody scores that round. A
+- **too simple:** if everyone who ran this round reached the flag, and
+  that was at least two people (players who disconnected do not count
+  either way), nobody scores that round. A
   red "Too simple · no one wins" stamp lands on the round card, which stays
   up 1.5 s longer. A level everyone can finish rewards nobody, so the
   incentive is to build something that catches at least one person;
@@ -108,8 +109,9 @@ Within one game:
   reaches 4, rather than playing out six rounds. The round card shows each
   player's bar toward 4, growing from their total before the round.
 
-With one player alone every round is "too simple", so nobody can score
-solo; that follows from the rule and is intended.
+A player alone is never "too simple": the flag still scores +1, so a solo
+game is played to 4 points or six rounds like any other (decided by the
+human, 2026-10-13).
 
 Scores are shown on the roster during the game and as a final table at
 LEVEL_END. They belong to that one game: no all-time leaderboard, nothing
