@@ -136,3 +136,9 @@ unfair.
 
 The full README in the HTML the server sends; never fetched and rendered by
 client JavaScript.
+
+## Decisions
+
+Decisions about how the game behaves with several people in it are recorded
+one per file in `docs/decisions/` (architecture decision records), with the
+options considered and what the choice costs.
