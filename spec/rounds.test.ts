@@ -1,8 +1,8 @@
 import { expect, it } from "vitest";
 import {
   BUILD_IDLE_MS, BUILD_MAX_MS, COUNTDOWN_MS, DRAW_MS, LOCK_MS, MAX_PLAYERS, MAX_ROUNDS, RECONNECT_GRACE_MS, RESULTS_MS, RUN_IDLE_MS, type RoundState,
-  SEAT_HOLD_MS, SELECT_MS, STAMP_MS, VOTE_MS, WIN_POINTS, act, claim, drawResult, join, leave, moved, newRoundState, pick, report, tick, tooSimple,
-  touchBuild, unclaim, vote,
+  KEEP, SCORES_MS, SEAT_HOLD_MS, SELECT_MS, STAMP_MS, WIN_POINTS, act, claim, drawResult, join, leave, moved, newRoundState, pick, report, tick,
+  tooSimple, touchBuild, unclaim,
 } from "../src/shared/rounds.ts";
 import { type ScoreEvent, killCredit, tally } from "../src/shared/score.ts";
 
@@ -169,28 +169,52 @@ const toLevelEnd = (s: RoundState, ids: string[]): number => {
   return t;
 };
 
-it("S8: after six rounds, the vote decides: majority restarts (back to choosing a level), a tie keeps the level", () => {
+// the final scores, then back to the lobby with the KEEP sign up
+const toNextChoice = (s: RoundState): number => {
+  let t = toLevelEnd(s, s.players.filter((p) => p.active).map((p) => p.id));
+  expect(tick(s, t + SCORES_MS - 1)).toBeNull(); // the score reveal
+  t += SCORES_MS;
+  expect(tick(s, t)).toEqual({ to: "SELECT" });
+  return t;
+};
+
+it("S8: after a game, players walk to choose what next: keep building (KEEP) or a fresh map", () => {
   const s = twoBuilding();
-  let t = toLevelEnd(s, ["a", "b"]);
-  vote(s, "a", "RESTART");
-  expect(tick(s, ++t)).toBeNull(); // B has not voted yet
-  vote(s, "b", "RESTART");
-  expect(tick(s, ++t)).toEqual({ to: "SELECT" });
+  let t = toNextChoice(s);
+  expect(s.keepable).toBe(true);
+  expect(pick(s, "a", KEEP, t)).toBe(true);
+  pick(s, "b", KEEP, t);
+  tick(s, t);
+  expect(tick(s, t + LOCK_MS)).toEqual({ to: "BUILD", newLevel: true, archive: true });
+  expect(s.keepable).toBe(false);
   expect(s.round).toBe(1);
 
-  const tie = twoBuilding();
-  t = toLevelEnd(tie, ["a", "b"]);
-  vote(tie, "a", "RESTART");
-  vote(tie, "b", "ARCHIVE");
-  expect(tick(tie, ++t)).toEqual({ to: "BUILD", newLevel: true, archive: true });
+  // all for a fresh map: that map, bare
+  const fresh = twoBuilding();
+  t = toNextChoice(fresh);
+  pick(fresh, "a", 3, t);
+  pick(fresh, "b", 3, t);
+  tick(fresh, t);
+  expect(tick(fresh, t + LOCK_MS)).toEqual({ to: "BUILD", newLevel: true, archive: false, layout: 3 });
+
+  // before any game there is nothing to keep
+  const first = newRoundState(1, 0, "SELECT");
+  sit(first, "a", 0);
+  expect(pick(first, "a", KEEP, 0)).toBe(false);
 });
 
-it("S8: nobody voting keeps the level once the vote times out", () => {
-  const s = twoBuilding();
-  const t = toLevelEnd(s, ["a", "b"]);
-  expect(tick(s, t + VOTE_MS - 1)).toBeNull();
-  expect(tick(s, t + VOTE_MS)).toEqual({ to: "BUILD", newLevel: true, archive: true });
-  expect(vote(s, "a", "RESTART")).toBe(false); // the vote is over
+it("S8: a split between keeping and a fresh map spins the wheel, weighted by votes", () => {
+  const s = newRoundState(1, 0);
+  for (const id of ["a", "b", "c", "d"]) sit(s, id, 0);
+  let t = toNextChoice(s);
+  for (const id of ["a", "b", "c"]) pick(s, id, KEEP, t);
+  pick(s, "d", 2, t);
+  tick(s, t);
+  expect(tick(s, t + LOCK_MS, 0, () => 0.1)).toEqual({ to: "DRAW" });
+  expect(s.draw?.options).toEqual([{ layout: KEEP, votes: 3 }, { layout: 2, votes: 1 }]);
+  expect(s.draw?.result).toBe(KEEP);
+  t += LOCK_MS + 7500;
+  expect(tick(s, t)).toEqual({ to: "BUILD", newLevel: true, archive: true });
 });
 
 it("S9: four characters are four seats; a fifth person watches and takes a seat once it is released", () => {
@@ -303,10 +327,7 @@ it("lets a seated player swap to a free character or give the seat up while choo
 
 it("keeps every seat's character into the next game", () => {
   const s = twoBuilding();
-  const t = toLevelEnd(s, ["a", "b"]);
-  vote(s, "a", "RESTART");
-  vote(s, "b", "RESTART");
-  expect(tick(s, t + 1)?.to).toBe("SELECT");
+  toNextChoice(s);
   expect(Object.fromEntries(s.players.map((p) => [p.id, p.character]))).toEqual({ a: 0, b: 1 });
 });
 

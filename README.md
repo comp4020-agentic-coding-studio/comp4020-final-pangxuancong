@@ -50,8 +50,9 @@ players read cause and effect.
    level.
 
 A game ends at the end of the round in which someone reaches 4 points, or after
-six rounds. Then everyone votes: keep building on this level in the next game,
-or choose a new one.
+six rounds. Then everyone walks back to the signs, now with one more: keep
+building on this level in the next game, or a new map. A split goes to the
+wheel again.
 
 ## Help or sabotage
 
@@ -116,7 +117,7 @@ fair.
 
 The game has three courses, six pieces plus the Demolition Bomb, four
 characters (Chicken, Big Dog, Pot Horse and Dabai), scores, and the
-archive-or-restart vote. Many rooms can play at once, four players each; a
+choice after a game to keep building on the level or start a new map. Many rooms can play at once, four players each; a
 dropped connection keeps its seat for two minutes.
 
 ## Sources

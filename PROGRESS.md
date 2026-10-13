@@ -77,12 +77,12 @@ Playable build-and-run platformer, pushed and deployed to Fly on 2026-10-13
   round's end. The round card animates each player's bar toward 4.
 - Launcher (key 6): one shot a second in one of four directions; a hit
   knocks the runner out of the level.
-- After six rounds: final scores and a vote. Archive (majority, tie or
-  timeout) starts the next game on a copy of the level; restart returns to
-  level choice. The final table reveals from last place up.
+- After a game: final scores, then the lobby with four signs: keep building
+  (the next game on a copy of the level) or one of the three maps (bare). A
+  split spins the wheel, as before a game. The final table reveals from last place up.
   Scores reset per game.
 - Persistent: levels (games), items (demolished kept as history), score
-  events. Ephemeral: players, positions, statuses, previews, traces, votes.
+  events. Ephemeral: players, positions, statuses, previews, traces, picks.
 
 Not built yet: activity logging; the fan and moving-platform sounds.
 

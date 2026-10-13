@@ -6,7 +6,7 @@ import { levelById } from "../shared/levels.ts";
 import { type ClientToServer, type Handshake, PROTOCOL, type PlayerView, type ServerToClient, type Snapshot } from "../shared/protocol.ts";
 import {
   BUILD_IDLE_MS, BUILD_MAX_MS, MAX_PLAYERS, MAX_ROUNDS, type Player, type RoundState, WIN_POINTS,
-  act, canBuild, claim, join, leave, moved, newRoundState, pick, report, runComplete, tick, tooSimple, touchBuild, unclaim, vote,
+  act, canBuild, claim, join, leave, moved, newRoundState, pick, report, runComplete, tick, tooSimple, touchBuild, unclaim,
 } from "../shared/rounds.ts";
 import { type ScoreEvent, killCredit, tally } from "../shared/score.ts";
 import {
@@ -135,6 +135,7 @@ function createRoom(code: string): Room {
       protocol: PROTOCOL,
       room: code,
       draw: state.phase === "DRAW" ? state.draw : null,
+      keepable: state.keepable,
       levelId: level?.id ?? 0,
       layout: level?.layout ?? 1,
       round: state.round,
@@ -150,7 +151,7 @@ function createRoom(code: string): Room {
       players: state.players.map(
         (p): PlayerView => ({
           id: p.id, name: nameOf(p), colour: colourOf(p), connected: p.connected, active: p.active, build: p.build, run: p.run,
-          points: totals.get(p.id)?.points ?? 0, gained: thisRound.get(p.id)?.points ?? 0, vote: p.vote, pick: p.pick, character: p.character,
+          points: totals.get(p.id)?.points ?? 0, gained: thisRound.get(p.id)?.points ?? 0, pick: p.pick, character: p.character,
         }),
       ),
       // everyone who scored, plus everyone playing now, even on zero
@@ -189,7 +190,7 @@ function createRoom(code: string): Room {
 
   // Timeouts can change build or run states inside tick() without a phase
   // transition, so compare what a snapshot would show before and after.
-  const signature = (): string => JSON.stringify(state.players.map((p) => [p.id, p.build, p.run, p.connected, p.active, p.vote, p.pick, p.character]));
+  const signature = (): string => JSON.stringify(state.players.map((p) => [p.id, p.build, p.run, p.connected, p.active, p.pick, p.character]));
   let lastDeadlineBroadcast = 0;
   const timer = setInterval(() => {
     const now = Date.now();
@@ -203,20 +204,14 @@ function createRoom(code: string): Room {
       traces = nextTraces;
       nextTraces = [];
     }
-    if (t?.to === "SELECT" && level) {
-      finishLevel(level.id, "restarted");
-      level = null;
-      items = [];
-      scoreEvents = [];
-      traces = [];
-    }
     if (t?.to === "BUILD") {
       if (t.newLevel) {
-        // archive: keep building on a copy of this level; otherwise the chosen course, bare
+        // keep: build on a copy of the level just played; otherwise the chosen course, bare
         if (t.archive && level) {
           finishLevel(level.id, "archived");
           level = startLevel(code, level, level.layout);
         } else {
+          if (level) finishLevel(level.id, "restarted");
           level = startLevel(code, null, t.archive ? 1 : t.layout);
         }
         items = readItems(level.id);
@@ -336,10 +331,6 @@ function createRoom(code: string): Room {
       }
       voidIfTooSimple();
       broadcast();
-    });
-
-    socket.on("level:vote", (v) => {
-      if (vote(state, id, v)) broadcast();
     });
 
     socket.on("disconnect", () => {

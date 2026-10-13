@@ -9,8 +9,8 @@ BUILD ──(no active player WAITING)──▶ COUNTDOWN ──▶ RUN
   ▲                                                  │
   ├──── RESULTS ◀──────(no active player RUNNING)────┘
   │        │ after round 6
-  └── LEVEL_END (final scores, vote: archive or restart)
-                    restart ──▶ SELECT
+  └── LEVEL_END (final scores) ──▶ SELECT, with a KEEP sign
+                    (keep ──▶ BUILD on a copy; a map ──▶ BUILD on it bare)
 ```
 
 The level persists across every transition. The server owns the phase.
@@ -47,7 +47,7 @@ Picks and the draw are ephemeral.
 
 A game on one level ends at the end of the round in which someone reaches
 **4 points**, or after **six rounds**, whichever comes first (decided by the
-human, 2026-10-13). Then comes LEVEL_END: the final scores, and a vote on
+human, 2026-10-13). Then comes LEVEL_END: the final scores, and a choice of
 what happens to the level (below). Each player
 adds at most one item per round.
 
@@ -154,19 +154,25 @@ finishing, so the game no longer stays neutral between the two; that is a
 deliberate choice, and playtesting should show whether it crowds out
 helping.
 
-## LEVEL_END: archive or restart
+## LEVEL_END, then keep or a new map
 
-After round 6's results everyone connected votes:
+LEVEL_END shows the final scores for 9 s. Then everyone goes back to the
+lobby (SELECT, keeping their seats), which now has four signs: **Keep
+building** on the level just played, and the three maps. It is the same
+choice as before a game (decided by the human, 2026-10-13: the old
+keep-or-restart buttons could split too, so they work like the map vote):
 
-- **Archive:** this level is archived with its scores, and the next game
-  starts at round 1 on a copy of it, every surviving item still in place, to
-  keep building on.
-- **Restart:** players choose a course again (SELECT, keeping their seats), and the next game
-  starts on it bare.
+- **Keep** (`KEEP` = 0): this level is archived with its scores, and the
+  next game starts at round 1 on a copy of it, every surviving item still in
+  place, to keep building on.
+- **A map:** the next game starts on that course, bare (the last level is
+  finished as restarted, its items kept as history).
 
-Majority wins once everyone connected has voted, or after 30 s. A tie or
-no votes means archive, so nobody's work is thrown away by default. Scores
-start from zero either way.
+All under one sign after the 2 s lock, or the 30 s clock: that. Split: the
+wheel, weighted by votes. Keeping and a new map are one vote, not two in a
+row: the chance of keeping is the same either way (votes for keep over all
+votes), and nobody waits through two wheels. Scores start from zero either
+way.
 
 ## Previous-round traces (optional)
 

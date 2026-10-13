@@ -52,8 +52,9 @@ Loop and rounds:
   never holds a round for longer than a short reconnect grace.
 - A game is played on one level by at most four players and ends at the
   end of the round in which someone reaches 4 points, or after six rounds;
-  then everyone votes to archive the level (keep building on it next game)
-  or restart bare.
+  then players choose, the same way as a map (walk to a sign, a weighted
+  wheel if split), between keeping the level (build on it next game) and
+  a fresh map.
 - Scores (+1 finish, +0.2 per other player killed by your spike or
   launcher) live inside one game only. A round in which everyone who ran
   (two or more) reached the flag scores nobody ("too simple")

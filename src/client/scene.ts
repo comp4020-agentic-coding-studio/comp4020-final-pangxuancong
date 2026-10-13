@@ -7,7 +7,7 @@ import {
   CELL, COLS, DEATH_Y, FAN_DIRS, HEIGHT, type Item, type PixelRect, type Proposal, ROWS,
   LAUNCH_INTERVAL_MS, SHOT_KNOCKBACK, SHOT_RADIUS, SHOT_SPEED, VIEW_H, VIEW_W, WIDTH, body, muzzle, shotRange, shotsAt, cellToPixels, fanZone, footprint, movingOffset, movingVelocity, placementError,
 } from "../shared/level.ts";
-import { type Block, LOBBY, LOBBY_COLS, type LevelDef, levelById } from "../shared/levels.ts";
+import { type Block, LOBBY, LOBBY_COLS, type LevelDef, type LobbySign, levelById, lobbySigns } from "../shared/levels.ts";
 import { MOVEMENT, type Side, canWallJump, wallJumpVelocity } from "../shared/movement.ts";
 import type { Phase } from "../shared/rounds.ts";
 import { C, type Pose, drawCharacter, drawCourseBlock, drawFanBlades, drawItem, drawMovingPlank, drawShot, drawTravel, hex } from "./draw.ts";
@@ -104,7 +104,8 @@ export class LevelScene extends Phaser.Scene {
   private runStartedAt = 0; // performance.now() when RUN began, for moving platforms
   private spin = 0; // fan blades
   private course: LevelDef = levelById(1);
-  private courseLayout = 0; // which course is built, 0 for none yet
+  private courseLayout = -1; // which course is built (0 the lobby), -1 for none yet
+  private lobbyKey = ""; // the lobby as built: which signs, and what KEEP would keep
   private courseObjects: Phaser.GameObjects.GameObject[] = [];
   private dust!: Phaser.GameObjects.Particles.ParticleEmitter;
   private shotLayer!: Phaser.GameObjects.Graphics;
@@ -112,6 +113,7 @@ export class LevelScene extends Phaser.Scene {
   private spent = new Set<string>(); // shots that hit a player or a moving plank this run
   private lastVolley = new Map<string, number>(); // launcher id: last shot fired, for the puff
   private sparks!: Phaser.GameObjects.Particles.ParticleEmitter;
+  private signs: LobbySign[] = []; // lobby: the signs up now
   private signCounts = new Map<number, Phaser.GameObjects.Text>(); // lobby: votes under each sign
   private signGlow: Phaser.GameObjects.Graphics | null = null;
   private standingUnder: number | null = null; // lobby: the sign my runner stands under
@@ -523,11 +525,14 @@ export class LevelScene extends Phaser.Scene {
   private buildSigns(keep: <T extends Phaser.GameObjects.GameObject>(o: T) => T): void {
     const g = keep(this.add.graphics().setDepth(4));
     this.signGlow = keep(this.add.graphics().setDepth(3));
-    keep(this.add.text((LOBBY_COLS * CELL) / 2, 13 * CELL, "Stand under the map you want to play", {
+    const snap = store.snap!;
+    this.signs = lobbySigns(snap.keepable);
+    keep(this.add.text((LOBBY_COLS * CELL) / 2, 13 * CELL, snap.keepable ? "Stand under what you want next: keep building, or a new map" : "Stand under the map you want to play", {
       fontFamily: "Georgia, serif", fontSize: "22px", color: "#4a3420",
     }).setOrigin(0.5).setDepth(4));
-    for (const sign of LOBBY.signs) {
-      const def = levelById(sign.layout);
+    for (const sign of this.signs) {
+      const kept = sign.layout === 0;
+      const def = levelById(kept ? snap.layout : sign.layout);
       const { x, y } = sign.at;
       const z = sign.zone;
       // the post and the board: a picture of the course above its name
@@ -547,9 +552,21 @@ export class LevelScene extends Phaser.Scene {
         g.fillStyle(blk.style === "post" ? C.steel : C.wood, 1);
         g.fillRect(ox + r.x * s, oy + r.y * s, Math.max(1.5, r.w * s), Math.max(1.5, (blk.style === "shelf" || blk.style === "peg" ? 20 : r.h) * s));
       }
+      // keeping: the pieces everyone placed, as dots in their colours
+      if (kept) {
+        for (const it of snap.items) {
+          const f = footprint(it);
+          g.fillStyle(it.type === "spike" || it.type === "launcher" ? C.red : it.type === "spring" ? C.mustard : C.woodDark, 1);
+          g.fillRect(ox + f.col * CELL * s, oy + f.row * CELL * s, Math.max(2.5, f.w * CELL * s), Math.max(2.5, f.h * CELL * s));
+        }
+        // a brass "keep" ribbon across the corner
+        g.fillStyle(C.brass, 1);
+        g.fillRoundedRect(x + bw / 2 - 64, top - 12, 72, 22, 5);
+      }
       g.fillStyle(C.red, 1);
       g.fillTriangle(ox + def.flag.x * s, oy + def.flag.y * s - 10, ox + def.flag.x * s, oy + def.flag.y * s - 4, ox + def.flag.x * s + 7, oy + def.flag.y * s - 7);
-      keep(this.add.text(x, oy + th + 18, `Map ${def.id} · ${def.name}`, { fontFamily: "Georgia, serif", fontSize: "15px", fontStyle: "bold", color: "#4a3420" }).setOrigin(0.5).setDepth(4));
+      if (kept) keep(this.add.text(x + bw / 2 - 28, top - 1, `${snap.items.length} piece${snap.items.length === 1 ? "" : "s"}`, { fontFamily: "system-ui, sans-serif", fontSize: "11px", fontStyle: "bold", color: "#3d2a18" }).setOrigin(0.5).setDepth(4));
+      keep(this.add.text(x, oy + th + 18, kept ? `Keep building · ${def.name}` : `Map ${def.id} · ${def.name}`, { fontFamily: "Georgia, serif", fontSize: "15px", fontStyle: "bold", color: "#4a3420" }).setOrigin(0.5).setDepth(4));
       // the space to stand in
       g.lineStyle(2, C.woodDark, 0.5);
       g.strokeRoundedRect(z.x + 4, z.y + 4, z.w - 8, z.h - 8, 10);
@@ -565,7 +582,7 @@ export class LevelScene extends Phaser.Scene {
     if (!g) return;
     g.clear();
     const snap = store.snap;
-    for (const sign of LOBBY.signs) {
+    for (const sign of this.signs) {
       const votes = (snap?.players ?? []).filter((p) => p.pick === sign.layout && p.character !== null);
       const z = sign.zone;
       if (votes.length) {
@@ -591,13 +608,16 @@ export class LevelScene extends Phaser.Scene {
     const snap = store.snap;
     if (!snap) return;
     const def = inLobby(snap.phase) ? LOBBY : levelById(snap.layout);
-    if (def.id !== this.courseLayout) {
+    // the lobby is rebuilt when its signs change (the KEEP sign comes and goes)
+    const lobbyKey = def === LOBBY ? `${snap.keepable}:${snap.levelId}:${snap.items.length}` : "";
+    if (def.id !== this.courseLayout || lobbyKey !== this.lobbyKey) {
+      this.lobbyKey = lobbyKey;
       this.clearCharacters();
       this.buildCourse(def);
       this.lookAtStart();
     }
-    // the course's own pieces work exactly like placed ones
-    this.syncItems([...this.course.fixtures, ...snap.items]);
+    // the course's own pieces work exactly like placed ones (none in the lobby)
+    this.syncItems(def === LOBBY ? [] : [...this.course.fixtures, ...snap.items]);
     this.measureShots();
     if (snap.phase !== this.phase) this.enterPhase(snap.phase, snap.phaseElapsedMs);
     this.syncPlayers();
@@ -1406,7 +1426,7 @@ export class LevelScene extends Phaser.Scene {
 
     // in the lobby, standing under a sign is a vote for that map
     if (this.course === LOBBY && this.phase === "SELECT") {
-      const under = LOBBY.signs.find((sg) => inside(sg.zone, l.rect.x, l.rect.y))?.layout ?? null;
+      const under = this.signs.find((sg) => inside(sg.zone, l.rect.x, l.rect.y))?.layout ?? null;
       if (under !== this.standingUnder) {
         this.standingUnder = under;
         bus.pick(under);

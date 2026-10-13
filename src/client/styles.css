@@ -259,9 +259,6 @@ button.danger { background: var(--red); border-color: var(--red); }
   100% { transform: scale(0.9) translateY(-28%); opacity: 0; }
 }
 
-.vote { display: flex; justify-content: center; gap: 0.6rem; margin-top: 0.8rem; }
-.vote button { padding: 0.55rem 1.1rem; }
-.vote button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
 .tally { font-size: 0.85rem; }
 
 .head { display: inline-grid; width: 1.5rem; height: 1.5rem; flex: none; }
@@ -471,8 +468,8 @@ button.link { margin-left: 0.4rem; padding: 0; border: 0; background: none; colo
 .board .pts { font: 700 1.05rem var(--serif); text-align: right; font-variant-numeric: tabular-nums; }
 .board .row.winner { background: #fbefd2; box-shadow: 0 0 0 1.5px #e0bf77; }
 .board .row.winner .rank::before { content: "★ "; color: var(--brass); }
-.card.final .vote, .card.final .tally { opacity: 0; transition: opacity 400ms; pointer-events: none; }
-.card.final.ready .vote, .card.final.ready .tally { opacity: 1; pointer-events: auto; }
+.card.final .tally { opacity: 0; transition: opacity 400ms; }
+.card.final.ready .tally { opacity: 1; }
 
 /* touch screens: run and jump buttons under the level, thumbs apart */
 .pad {

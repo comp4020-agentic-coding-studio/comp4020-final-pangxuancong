@@ -18,8 +18,8 @@ Browser (src/client, built by Vite)
 └── draw.ts: how every piece looks
         │ Socket.IO: snapshot (whole shared state on every change),
         │ build:preview/commit/bomb/skip, run:pose (~12/s, volatile),
-        │ run:result (with the killing spike), level:vote, level:pick (the
-        │ sign stood under), seat:claim/leave; the handshake names the room
+        │ run:result (with the killing spike), level:pick (the sign stood
+        │ under: a map, or KEEP), seat:claim/leave; the handshake names the room
 Server (src/server, TypeScript run directly by Node)
 ├── main.ts: Express, /readme/, /api/rooms, /api/rooms/:code/level, the two
 │   pages, Vite middleware in dev, dist/client in production

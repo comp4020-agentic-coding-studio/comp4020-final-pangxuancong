@@ -9,7 +9,7 @@ export const MAX_PLAYERS = 4;
 export const COUNTDOWN_MS = 3000;
 export const RESULTS_MS = 4500; // the round card and its score bars
 export const STAMP_MS = 1500; // extra, when everyone made it: "too simple"
-export const VOTE_MS = 40_000; // LEVEL_END: the score reveal, then archive or restart
+export const SCORES_MS = 9000; // LEVEL_END: the final score reveal, then back to the lobby
 export const SELECT_MS = 30_000; // after the first player stands under a map, the rest have this long
 export const LOCK_MS = 2000; // everyone under a map: this long to change their mind
 // A split vote: the wheel. Voters drop in, it spins and slows, then the
@@ -18,6 +18,10 @@ export const DRAW_INTRO_MS = 900;
 export const DRAW_SPIN_MS = 4800;
 export const DRAW_MS = 7500;
 export const LEVEL_IDS = [1, 2, 3] as const;
+// After a game the lobby has a fourth sign: keep building on the level just
+// played (an archive) instead of a fresh map. It is a pick like the maps, so
+// the same walk, lock and wheel decide it.
+export const KEEP = 0;
 // A dropped connection is not leaving: for this long the round treats the
 // player as still here (a wifi blip costs nothing), and for SEAT_HOLD_MS their
 // character, seat and points wait for them (docs/decisions/0002-rooms-and-seats.md).
@@ -28,7 +32,6 @@ export const BUILD_MAX_MS = 120_000; // nobody is left waiting after this
 export const RUN_IDLE_MS = 30_000; // a character that has not moved: out
 
 export type Phase = "SELECT" | "DRAW" | "BUILD" | "COUNTDOWN" | "RUN" | "RESULTS" | "LEVEL_END";
-export type Vote = "ARCHIVE" | "RESTART";
 export type BuildState = "WAITING" | "PLACED" | "SKIPPED" | "DISCONNECTED";
 export type RunState = "RUNNING" | "DEAD" | "FINISHED" | "DISCONNECTED";
 
@@ -42,7 +45,6 @@ export interface Player {
   run: RunState | null; // null until the roster closes
   lastActivityAt: number; // build activity, or character movement during RUN
   joinedAt: number;
-  vote: Vote | null; // LEVEL_END only
   pick: number | null; // SELECT only: the map they stand under
   character: number | null; // the seat: index into CHARACTERS; null watches
 }
@@ -61,6 +63,7 @@ export interface RoundState {
   firstPickAt: number | null; // SELECT: someone stood under a map
   allInAt: number | null; // SELECT: since when every seated player has
   draw: Draw | null; // DRAW
+  keepable: boolean; // SELECT/DRAW after a game: the KEEP sign is up
 }
 
 export type Transition =
@@ -84,6 +87,7 @@ export const newRoundState = (round: number, now: number, phase: "BUILD" | "SELE
   firstPickAt: null,
   allInAt: null,
   draw: null,
+  keepable: false,
 });
 
 export const activePlayers = (s: RoundState): Player[] => s.players.filter((p) => p.active);
@@ -96,7 +100,7 @@ const seated = (s: RoundState): Player[] => s.players.filter((p) => p.character 
 export function join(s: RoundState, id: string, name: string, now: number): Player {
   let p = find(s, id);
   if (!p) {
-    p = { id, name, connected: false, leftAt: null, active: false, build: "WAITING", run: null, lastActivityAt: now, joinedAt: now, vote: null, pick: null, character: null };
+    p = { id, name, connected: false, leftAt: null, active: false, build: "WAITING", run: null, lastActivityAt: now, joinedAt: now, pick: null, character: null };
     s.players.push(p);
   }
   p.connected = true;
@@ -143,7 +147,7 @@ export function unclaim(s: RoundState, id: string): boolean {
 export function pick(s: RoundState, id: string, level: number | null, now: number): boolean {
   const p = find(s, id);
   if (s.phase !== "SELECT" || !p?.connected || p.character === null) return false;
-  if (level !== null && !(LEVEL_IDS as readonly number[]).includes(level)) return false;
+  if (level !== null && !(LEVEL_IDS as readonly number[]).includes(level) && !(level === KEEP && s.keepable)) return false;
   if (p.pick === level) return true;
   p.pick = level;
   if (level !== null && s.firstPickAt === null) s.firstPickAt = now;
@@ -153,7 +157,7 @@ export function pick(s: RoundState, id: string, level: number | null, now: numbe
 
 // The votes for each map; one map wins outright, several go to a draw.
 export const pickTally = (s: RoundState): { layout: number; votes: number }[] =>
-  LEVEL_IDS.map((layout) => ({ layout, votes: seated(s).filter((p) => p.connected && p.pick === layout).length })).filter((o) => o.votes > 0);
+  [...(s.keepable ? [KEEP] : []), ...LEVEL_IDS].map((layout) => ({ layout, votes: seated(s).filter((p) => p.connected && p.pick === layout).length })).filter((o) => o.votes > 0);
 
 // A draw weighted by the votes: 3 for one map and 1 for another is 75% and 25%.
 // `r` is in [0, 1).
@@ -175,7 +179,6 @@ export function leave(s: RoundState, id: string, now: number): void {
   if (!p) return;
   p.connected = false;
   p.leftAt = now;
-  p.vote = null;
   if (p.pick !== null) {
     p.pick = null;
     s.allInAt = null;
@@ -218,20 +221,6 @@ export function moved(s: RoundState, id: string, now: number): void {
   const p = find(s, id);
   if (p && s.phase === "RUN" && p.run === "RUNNING") p.lastActivityAt = now;
 }
-
-export function vote(s: RoundState, id: string, v: Vote): boolean {
-  const p = find(s, id);
-  if (s.phase !== "LEVEL_END" || !p?.connected || (v !== "ARCHIVE" && v !== "RESTART")) return false;
-  p.vote = v;
-  return true;
-}
-
-// Majority of the votes cast; a tie, or nobody voting, archives.
-export const voteResult = (s: RoundState): Vote => {
-  const archive = s.players.filter((p) => p.vote === "ARCHIVE").length;
-  const restart = s.players.filter((p) => p.vote === "RESTART").length;
-  return restart > archive ? "RESTART" : "ARCHIVE";
-};
 
 export function report(s: RoundState, id: string, result: "DEAD" | "FINISHED"): boolean {
   const p = find(s, id);
@@ -280,11 +269,7 @@ export function tick(s: RoundState, now: number, topPoints = 0, random: () => nu
         s.phaseEndsAt = null;
         return null;
       }
-      if (options.length === 1) {
-        s.round = 1;
-        startBuild(s, now);
-        return { to: "BUILD", newLevel: true, archive: false, layout: options[0].layout };
-      }
+      if (options.length === 1) return chosen(s, now, options[0].layout);
       s.phase = "DRAW";
       s.phaseStartedAt = now;
       s.phaseEndsAt = now + DRAW_MS;
@@ -293,10 +278,7 @@ export function tick(s: RoundState, now: number, topPoints = 0, random: () => nu
     }
     case "DRAW": {
       if (now < s.phaseEndsAt!) return null;
-      const layout = s.draw!.result;
-      s.round = 1;
-      startBuild(s, now);
-      return { to: "BUILD", newLevel: true, archive: false, layout };
+      return chosen(s, now, s.draw!.result);
     }
     case "BUILD": {
       const active = activePlayers(s);
@@ -341,8 +323,7 @@ export function tick(s: RoundState, now: number, topPoints = 0, random: () => nu
       if (s.round >= MAX_ROUNDS || topPoints >= WIN_POINTS) {
         s.phase = "LEVEL_END";
         s.phaseStartedAt = now;
-        s.phaseEndsAt = now + VOTE_MS;
-        for (const p of s.players) p.vote = null;
+        s.phaseEndsAt = now + SCORES_MS;
         return { to: "LEVEL_END" };
       }
       s.round += 1;
@@ -350,18 +331,19 @@ export function tick(s: RoundState, now: number, topPoints = 0, random: () => nu
       return { to: "BUILD", newLevel: false };
     }
     case "LEVEL_END": {
-      const voters = s.players.filter((p) => p.connected);
-      const allIn = voters.length > 0 && voters.every((p) => p.vote !== null);
-      if (!allIn && now < s.phaseEndsAt!) return null;
-      s.round = 1;
-      if (voteResult(s) === "ARCHIVE") {
-        startBuild(s, now);
-        return { to: "BUILD", newLevel: true, archive: true };
-      }
-      startSelect(s, now);
+      // the final scores, then everyone walks to choose what is next
+      if (now < s.phaseEndsAt!) return null;
+      startSelect(s, now, true);
       return { to: "SELECT" };
     }
   }
+}
+
+// The lobby has decided: KEEP builds on the last level, a map starts bare.
+function chosen(s: RoundState, now: number, layout: number): Transition {
+  s.round = 1;
+  startBuild(s, now);
+  return layout === KEEP ? { to: "BUILD", newLevel: true, archive: true } : { to: "BUILD", newLevel: true, archive: false, layout };
 }
 
 // A fresh BUILD: everyone holding a seat is on the roster, and nobody has
@@ -373,29 +355,30 @@ function startBuild(s: RoundState, now: number): void {
   s.phaseStartedAt = now;
   s.phaseEndsAt = null;
   s.draw = null;
+  s.keepable = false;
   s.players = s.players.filter((p) => p.connected || p.character !== null).sort((a, b) => a.joinedAt - b.joinedAt);
   for (const p of s.players) {
     p.active = p.character !== null;
     p.build = "WAITING";
     p.run = null;
-    p.vote = null;
     p.pick = null;
     p.lastActivityAt = now;
   }
   expire(s, now);
 }
 
-// Back to choosing a level: seats are kept, picks start empty.
-function startSelect(s: RoundState, now: number): void {
+// Back to choosing a level: seats are kept, picks start empty. After a game
+// the KEEP sign is up too.
+function startSelect(s: RoundState, now: number, keepable = false): void {
   s.phase = "SELECT";
   s.phaseStartedAt = now;
   s.phaseEndsAt = null;
   s.firstPickAt = null;
   s.allInAt = null;
   s.draw = null;
+  s.keepable = keepable;
   for (const p of s.players) {
     p.active = false;
     p.pick = null;
-    p.vote = null;
   }
 }
