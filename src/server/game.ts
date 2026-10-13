@@ -3,7 +3,7 @@ import type { Server, Socket } from "socket.io";
 import { CHARACTERS, SPECTATOR } from "../shared/characters.ts";
 import { type Item, demolitionError, placementError } from "../shared/level.ts";
 import { levelById } from "../shared/levels.ts";
-import type { ClientToServer, Handshake, PlayerView, ServerToClient, Snapshot } from "../shared/protocol.ts";
+import { type ClientToServer, type Handshake, PROTOCOL, type PlayerView, type ServerToClient, type Snapshot } from "../shared/protocol.ts";
 import {
   BUILD_IDLE_MS, BUILD_MAX_MS, MAX_PLAYERS, MAX_ROUNDS, type Player, type RoundState, WIN_POINTS,
   act, canBuild, claim, join, leave, moved, newRoundState, pick, report, runComplete, tick, tooSimple, touchBuild, unclaim, vote,
@@ -132,6 +132,7 @@ function createRoom(code: string): Room {
     const thisRound = tally(scoreEvents, state.round);
     const characterOf = (id: string): number | null => state.players.find((p) => p.id === id)?.character ?? pastCharacters.get(id) ?? null;
     return {
+      protocol: PROTOCOL,
       room: code,
       draw: state.phase === "DRAW" ? state.draw : null,
       levelId: level?.id ?? 0,

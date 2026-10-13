@@ -18,12 +18,20 @@ may hurt multiplayer readability.
   the system setting until the room header's "Motion" switch says otherwise
   (`src/client/motion.ts`). Never drop an animation that carries the
   outcome: the "Too simple" stamp still shows (no bounce), and the map wheel
-  still turns (once, gently), because the turning is the draw.
+  still turns (two turns, softer, no pointer kicks), because the turning is
+  the draw.
 
   Lesson (2026-10-13): Windows with "Show animations" off reports
   reduce-motion to the browser; the wheel used to jump straight to the
   result there, so the human saw no draw at all. Test with
   `reducedMotion: "reduce"` as well as without.
+
+  Lesson (2026-10-13, again): the human's dev server had missed a restart
+  (`node --watch` did not see a change to `src/shared/rounds.ts`), so it
+  sent snapshots without `draw.land`; the new client turned that into NaN
+  and the wheel never moved. Snapshots now carry `protocol`, and the page
+  says on screen when it and the server disagree. After changing
+  `src/shared/`, restart `pnpm dev` (docs/TESTING.md).
 
 ## Sound
 

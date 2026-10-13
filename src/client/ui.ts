@@ -522,14 +522,14 @@ function wheel(draw: Draw, snap: Snapshot): string {
 
 // The wheel's angle in turns at `ms` into DRAW: still while the voters drop
 // in, then TURNS full turns and the rest, easing out to stop at the drawn spot.
-// Reduced motion keeps the turn (it is the draw) but makes it short and slow
-// to start: one turn and the rest, over the last part of the spin.
+// Reduced motion keeps the turn (it is the draw) but makes it calmer: fewer
+// turns, a softer ease, no pointer kicks. Both start as soon as the voters
+// are in, so nobody watches a still wheel wondering if it will move.
 function angleAt(ms: number, end: number): number {
-  const gentle = reducedMotion.matches;
-  const spin = gentle ? DRAW_SPIN_MS * 0.5 : DRAW_SPIN_MS;
-  const from = DRAW_INTRO_MS + (gentle ? DRAW_SPIN_MS - spin : 0);
-  const k = Math.min(1, Math.max(0, (ms - from) / spin));
-  return ((gentle ? 1 : TURNS) + end) * (gentle ? 1 - (1 - k) ** 2 : 1 - (1 - k) ** 4);
+  const turns = reducedMotion.matches ? 2 : TURNS;
+  const k = Math.min(1, Math.max(0, (ms - DRAW_INTRO_MS) / DRAW_SPIN_MS));
+  const eased = reducedMotion.matches ? 1 - (1 - k) ** 3 : 1 - (1 - k) ** 4;
+  return (turns + end) * eased;
 }
 
 function spinDraw(card: HTMLElement, draw: Draw, elapsedAtArrival: number): void {
@@ -539,7 +539,10 @@ function spinDraw(card: HTMLElement, draw: Draw, elapsedAtArrival: number): void
   const sl = slices(draw);
   const won = sl.find((s) => s.layout === draw.result)!;
   // the pointer is at the top: the wheel turns so that this spot comes under it
-  const spot = won.from + draw.land * (won.to - won.from);
+  // the middle of the slice if the server did not say (an older server):
+  // a missing number must never stop the wheel turning
+  const stopAt = Number.isFinite(draw.land) ? draw.land : 0.5;
+  const spot = won.from + stopAt * (won.to - won.from);
   const end = 1 - spot;
   const startedAt = performance.now() - Math.max(0, elapsedAtArrival);
   const land = (): void => {

@@ -6,7 +6,7 @@ import Phaser from "phaser";
 import { io, type Socket } from "socket.io-client";
 import { ROTATIONS, VIEW_H, VIEW_W, type BuildChoice } from "../shared/level.ts";
 import { MOVEMENT } from "../shared/movement.ts";
-import type { ClientToServer, ServerToClient } from "../shared/protocol.ts";
+import { type ClientToServer, PROTOCOL, type ServerToClient } from "../shared/protocol.ts";
 import { LevelScene } from "./scene.ts";
 import { bus, emptySelection, iCanBuild, store } from "./state.ts";
 import { PIECES, buildTray, buttons, muteButton, onVote, render, renderPhase, say, snapshotArrived } from "./ui.ts";
@@ -85,7 +85,15 @@ scene.onReady = () => {
 
 // ---------- from the server ----------
 
+let warnedProtocol = false;
 socket.on("snapshot", (snap) => {
+  if (snap.protocol !== PROTOCOL && !warnedProtocol) {
+    warnedProtocol = true;
+    console.error(`server protocol ${snap.protocol}, this page ${PROTOCOL}`);
+    say(import.meta.env.DEV
+      ? "This page and the server are different versions: restart pnpm dev, then reload."
+      : "The game has been updated. Reload the page to keep playing.", true);
+  }
   const before = store.snap;
   store.snap = snap;
   snapshotArrived();

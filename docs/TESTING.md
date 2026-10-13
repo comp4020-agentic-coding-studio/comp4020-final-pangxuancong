@@ -7,7 +7,11 @@ frame-perfect physics tests are not wanted. Everything in `spec/` runs with
 
 Restart `pnpm dev` before checking a change. `node --watch` can lose track of
 a file that was replaced rather than written in place (`sed -i`, some editors)
-and keep serving old code without saying so.
+and keep serving old code without saying so. Python edits that rewrite a
+file do this too. When the human's own dev server is running, restart it
+after any change to `src/server/` or `src/shared/` (`/tmp/devctl.sh stop`
+then `start`), and confirm with a request that the new behaviour is live.
+A page and server on different `PROTOCOL` numbers say so on screen.
 
 Stopping a background `pnpm dev` means stopping the watcher, not just the
 server: killing the process that holds port 8080 leaves `node --watch`

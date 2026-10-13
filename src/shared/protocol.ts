@@ -4,6 +4,12 @@
 import type { BuildChoice, Item, Proposal } from "./level.ts";
 import type { BuildState, Draw, Phase, RunState, Vote } from "./rounds.ts";
 
+// Bumped whenever a snapshot's shape or meaning changes. A browser and a
+// server that disagree say so on screen, instead of misreading each other
+// (a dev server that missed a restart once froze the map wheel: a field it
+// did not send yet became NaN).
+export const PROTOCOL = 3;
+
 export interface PlayerView {
   id: string;
   name: string;
@@ -23,6 +29,7 @@ export interface PlayerView {
 export interface ScoreRow { playerId: string; name: string; colour: string; character: number | null; points: number; finishes: number; kills: number }
 
 export interface Snapshot {
+  protocol: number; // PROTOCOL on the server that sent it
   room: string; // its code, as in /r/ABCD
   draw: Draw | null; // DRAW: the maps in the draw, their votes, and the result
   levelId: number; // 0 while choosing the first level
