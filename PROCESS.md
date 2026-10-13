@@ -1,11 +1,5 @@
 # Process overview
 
-<!-- DRAFT for crit 9, 2026-10-13, assembled by the agent from the commit
-     history and the instructions I gave in the sessions. Every fact and
-     commit here is real; the wording and emphasis are a starting point.
-     Rewrite it in my own words before the cutoff and delete this comment.
-     Places that need my own judgement are marked TODO(human). -->
-
 This is rewritten at each crit so it describes the project as it stands. This
 version is for crit 9 (all at once).
 
@@ -30,14 +24,15 @@ level during BUILD, then everyone runs it at the same time
 The definition of good in `README.md` survived the change, because it was
 about interdependence, not about machines.
 
-TODO(human): one or two sentences on why the platformer was worth throwing
-away the crit 8 work, in my words.
+Throwing away the crit 8 work was worth it because patching it would only
+have given me a better machine to watch. What I wanted from the start was the
+feeling of four people changing one level and then living with it, and the
+only way to get that was to let players place pieces and run.
 
 ## Rebuilding the harness first
 
-As before, I worked out the new direction outside Claude Code before any code
-(TODO(human): confirm this was ChatGPT again): the
-loop, the items, the Demolition Bomb as a way out of a level that has been
+As before, I worked out the new direction in a separate conversation before
+writing any code: the loop, the items, the Demolition Bomb as a way out of a level that has been
 blocked off, and wall-jump assistance so the game is about what players build
 rather than about precise jumping. I gave that brief to Claude Code, which
 retired the old harness and wrote a new one in one commit, before any game
@@ -103,7 +98,12 @@ I picked it because BUILD and RUN wait for everyone, which is exactly the
 interdependence the README asks for, and also exactly how one closed laptop
 could stop a crit pod.
 
-TODO(human): say which option I expect the pod to argue for, and my answer.
+I expect the pod to argue for waiting, or for pausing until the missing
+player comes back, because leaving someone behind takes their turn away. My
+answer is that at a crit, or with friends on their phones, someone dropping
+out is normal, and a game that stops for one person stops for everyone. The
+absent player's pieces still stay in the level, so they still shape the
+round even when they are not there.
 
 ## Directing, grounding and correcting the work
 
@@ -141,7 +141,10 @@ commit as the code, so the next session does not build against an old rule.
   tab had been verified when it had not been. It was removed and replaced with
   a real two-browser test.
 
-TODO(human): which of these corrections taught me the most, and why.
+The Moving Platform taught me the most. I reported "too fast" once and the
+agent slowed it down, but it was still too fast on my screen, because the
+real problem was the frame rate, not the speed. Reporting what I saw, not
+what I guessed the fix was, is what got to the cause.
 
 ## What comes next
 
