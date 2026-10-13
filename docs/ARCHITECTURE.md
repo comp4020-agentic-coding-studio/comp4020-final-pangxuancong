@@ -109,7 +109,7 @@ placed_item(id, level_id, type, col, row, rot, created_by, created_by_id,
 score_event(level_id, round, player_id, name, kind, created_at)
 ```
 
-One level row is one game of six rounds. Archiving finishes it with
+One level row is one game (up to six rounds, or until someone has 4 points). Archiving finishes it with
 `outcome = 'archived'` and starts a new row with `parent_id` pointing at it
 and a copy of its surviving items; restarting starts a bare row on the course chosen in SELECT. `layout` is
 the course number (1–3); an archived copy keeps its parent's. Scores are

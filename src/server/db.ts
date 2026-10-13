@@ -112,6 +112,11 @@ export function insertScoreEvent(levelId: number, e: ScoreEvent): void {
   db.prepare("INSERT INTO score_event (level_id, round, player_id, name, kind, created_at) VALUES (?, ?, ?, ?, ?, ?)").run(levelId, e.round, e.playerId, e.name, e.kind, now());
 }
 
+// A round where everyone made it scores nobody: its points are taken back.
+export function voidRoundScores(levelId: number, round: number): void {
+  db.prepare("DELETE FROM score_event WHERE level_id = ? AND round = ?").run(levelId, round);
+}
+
 export function destroyItem(id: string, by: string, round: number): void {
   db.prepare("UPDATE placed_item SET destroyed_by = ?, destroyed_round = ?, destroyed_at = ? WHERE id = ?").run(by, round, now(), id);
 }

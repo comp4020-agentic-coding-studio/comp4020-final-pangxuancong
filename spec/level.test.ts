@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { CELL, COLS, type Item, MOVING_PERIOD_MS, ROWS, MOVING_TRAVEL, demolitionError, fanZone, movingOffset, movingVelocity, placementError as check } from "../src/shared/level.ts";
+import { CELL, COLS, type Item, MOVING_PERIOD_MS, ROWS, MOVING_TRAVEL, demolitionError, fanZone, movingOffset, movingVelocity, placementError as check, shotRange, shotsAt, muzzle, LAUNCH_INTERVAL_MS, SHOT_SPEED, WIDTH } from "../src/shared/level.ts";
 import { LEVELS } from "../src/shared/levels.ts";
 import { MOVEMENT, canWallJump, wallJumpVelocity } from "../src/shared/movement.ts";
 
@@ -97,4 +97,30 @@ it("drives a moving platform by its track's own velocity, and slowly", () => {
   expect(movingVelocity({ ...mover, rot: 1 }, 1500).vy).toBeGreaterThan(0);
   // its top speed stays readable: under 2 cells a second
   expect(movingVelocity(mover, MOVING_PERIOD_MS / 4).vx).toBeLessThan(2 * CELL);
+});
+
+it("fires a launcher's shots on a fixed beat, straight, until the first solid thing or the edge", () => {
+  const right = item({ id: "L", type: "launcher", col: 2, row: 6, rot: 0 });
+  const m = muzzle(right);
+  expect(m.dx).toBe(1);
+  // nothing in the way: to the world's edge
+  expect(shotRange(right, [])).toBeCloseTo(WIDTH - m.x);
+  // a wall five cells on stops it at the wall's face, less the shot's radius
+  const wall = { x: 8 * CELL, y: 5 * CELL, w: CELL, h: 3 * CELL };
+  const range = shotRange(right, [wall]);
+  expect(m.x + range).toBeLessThan(wall.x);
+  expect(m.x + range).toBeGreaterThan(wall.x - 10);
+  // something above the line is not in the way
+  expect(shotRange(right, [{ x: 8 * CELL, y: 0, w: CELL, h: 5 * CELL }])).toBeCloseTo(WIDTH - m.x);
+  // one shot a second; the same moment gives the same shots
+  expect(shotsAt(right, range, 0)).toHaveLength(1);
+  const later = shotsAt(right, range, LAUNCH_INTERVAL_MS * 0.5);
+  expect(later[0].x).toBeCloseTo(m.x + SHOT_SPEED * 0.5);
+  expect(shotsAt(right, range, 3456)).toEqual(shotsAt(right, range, 3456));
+  // a shot is gone once it has flown its range
+  const life = (range / SHOT_SPEED) * 1000;
+  expect(shotsAt(right, range, life + 1).every((sh) => sh.firedAt > 0)).toBe(true);
+  // it fires in all four directions, and refuses a fifth
+  for (const rot of [0, 1, 2, 3]) expect(placementError([], { type: "launcher", col: 8, row: 4, rot })).toBeNull();
+  expect(placementError([], { type: "launcher", col: 8, row: 4, rot: 4 })).not.toBeNull();
 });

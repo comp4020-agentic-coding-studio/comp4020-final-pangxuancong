@@ -38,6 +38,10 @@ export const PIECES: { choice: BuildChoice; name: string; icon: string }[] = [
     icon: `<rect x="12" y="15" width="32" height="9" rx="3" fill="#6f8f5c"/><rect x="14" y="17" width="28" height="2" fill="#fff" opacity=".3"/><path d="M4 9 h10 M4 9 l3 -2.5 M4 9 l3 2.5 M52 9 h-10 M52 9 l-3 -2.5 M52 9 l-3 2.5" stroke="#6a655d" stroke-width="1.6" fill="none" stroke-linecap="round"/>`,
   },
   {
+    choice: "launcher", name: "Launcher",
+    icon: `<rect x="14" y="5" width="22" height="22" rx="4" fill="#5d6265"/><rect x="16" y="7" width="18" height="18" rx="3" fill="#8d9194"/><rect x="25" y="12" width="14" height="8" fill="#2b2a28"/><rect x="36" y="11" width="2.5" height="10" fill="#c9a03d"/><circle cx="25" cy="16" r="3.5" fill="#b24a3e"/><circle cx="48" cy="16" r="3.4" fill="#2b2a28"/><circle cx="43" cy="16" r="1.6" fill="#2b2a28" opacity=".25"/>`,
+  },
+  {
     choice: "bomb", name: "Demolition bomb",
     icon: `<circle cx="26" cy="19" r="10" fill="#2b2a28"/><circle cx="22.5" cy="15.5" r="2.6" fill="#fff" opacity=".3"/><path d="M32 11 Q36 4 41 6" fill="none" stroke="#8f6339" stroke-width="2"/><path d="M41 6 l3 -3 M41 6 l4 0 M41 6 l2 3" stroke="#e0ae45" stroke-width="1.8" stroke-linecap="round"/>`,
   },
@@ -124,7 +128,7 @@ export function render(): void {
   const course = levelById(snap.layout);
   el.where.textContent = snap.phase === "SELECT" ? "Choosing a level"
     : `Level ${course.id}: ${course.name} · game ${snap.levelId}${snap.archivedFrom ? `, built on game ${snap.archivedFrom}` : ""}`;
-  el.round.textContent = snap.phase === "SELECT" ? "New game" : snap.phase === "LEVEL_END" ? "Six rounds done" : `Round ${snap.round} of ${snap.maxRounds}`;
+  el.round.textContent = snap.phase === "SELECT" ? "New game" : snap.phase === "LEVEL_END" ? "Game over" : `Round ${snap.round} of ${snap.maxRounds}`;
   el.pill.textContent = PHASE_NAMES[snap.phase];
   el.pill.className = `pill ${snap.phase === "RUN" || snap.phase === "COUNTDOWN" ? "run" : snap.phase === "BUILD" ? "" : "end"}`;
 
@@ -158,7 +162,7 @@ export function render(): void {
 
   el.help.innerHTML =
     snap.phase === "BUILD"
-      ? `Choose a piece (<kbd>1</kbd>–<kbd>6</kbd>), click the level to put it there, <kbd>Enter</kbd> to place. <kbd>R</kbd> turns it, <kbd>Esc</kbd> cancels. Pieces are permanent once placed. Look around: scroll to zoom, drag with the right button, or <kbd>←</kbd><kbd>↑</kbd><kbd>→</kbd><kbd>↓</kbd>.`
+      ? `Choose a piece (<kbd>1</kbd>–<kbd>7</kbd>), click the level to put it there, <kbd>Enter</kbd> to place. <kbd>R</kbd> turns it, <kbd>Esc</kbd> cancels. Pieces are permanent once placed. Look around: scroll to zoom, drag with the right button, or <kbd>←</kbd><kbd>↑</kbd><kbd>→</kbd><kbd>↓</kbd>.`
       : snap.phase === "RUN" && snap.players.find((p) => p.id === store.me)?.run !== "RUNNING"
         ? `Watching the others: <kbd>E</kbd> for the next runner, or click a badge on the edge · arrows, right drag or the wheel to look around yourself`
       : snap.phase === "RUN" || snap.phase === "COUNTDOWN"
@@ -220,13 +224,29 @@ export function renderPhase(): void {
     }
     case "RESULTS": {
       const made = active.filter((p) => p.run === "FINISHED");
-      guide = snap.round >= snap.maxRounds ? "That was the last round. Final scores next." : `Next: build round ${snap.round + 1}. The level stays as it is.`;
+      const winners = active.filter((p) => p.points >= snap.winPoints);
+      guide = winners.length
+        ? `${names(winners)} reached ${snap.winPoints} points. Final scores next.`
+        : snap.levelDone ? "That was the last round. Final scores next." : `Next: build round ${snap.round + 1}. The level stays as it is.`;
+      // each bar runs from before this round to now, out of the points needed to win
+      const goal = snap.winPoints;
+      const notches = Array.from({ length: goal - 1 }, (_, i) => `<i style="left:${((i + 1) / goal) * 100}%"></i>`).join("");
       const rows = [...active]
-        .sort((a, b) => b.gained - a.gained || b.points - a.points)
-        .map((p) => `<tr><td><span class="who">${head(p.character, p.colour)}${escape(p.name)}</span></td><td>${status(p, snap).text}</td><td class="gain">${p.gained ? `+${pts(p.gained)}` : ""}</td><td>${pts(p.points)}</td></tr>`)
+        .sort((a, b) => b.points - a.points || b.gained - a.gained)
+        .map((p) => {
+          const from = Math.max(0, p.points - p.gained);
+          return `<li class="track-row${p.points >= goal ? " won" : ""}" data-from="${from}" data-to="${p.points}" style="--c:${p.colour}">
+            ${head(p.character, p.colour)}<span class="who">${escape(p.name)}<small>${status(p, snap).text}</small></span>
+            <span class="track">${notches}<b class="was" style="width:${Math.min(100, (from / goal) * 100)}%"></b><b class="now" style="width:${Math.min(100, (from / goal) * 100)}%"></b><em class="goal-flag"></em></span>
+            <span class="gain">${p.gained ? `+${pts(p.gained)}` : ""}</span><span class="pts">${pts(from)}</span></li>`;
+        })
         .join("");
-      const summary = made.length === 0 ? "Nobody reached the flag." : made.length === active.length ? "Everyone reached the flag." : `${made.length} of ${active.length} reached the flag.`;
-      overlay = `<div class="card"><h2>Round ${snap.round} complete</h2><p>${summary}</p><table>${rows}</table></div>`;
+      const summary = snap.tooSimple ? "Everyone reached the flag, so nobody scores this round."
+        : made.length === 0 ? "Nobody reached the flag." : `${made.length} of ${active.length} reached the flag.`;
+      overlay = `<div class="card round${snap.tooSimple ? " simple" : ""}" data-round="${snap.levelId}:${snap.round}">
+        ${snap.tooSimple ? `<div class="stamp" aria-live="polite"><span>Too simple</span><small>no one wins</small></div>` : ""}
+        <div class="body"><h2>Round ${snap.round} complete</h2><p>${summary}</p>
+        <ol class="tracks">${rows}</ol><p class="goal-note">First to ${goal} points wins · ${snap.maxRounds} rounds at most</p></div></div>`;
       break;
     }
     case "LEVEL_END": {
@@ -243,7 +263,9 @@ export function renderPhase(): void {
             .join("")
         : `<li class="row shown">Nobody scored this game.</li>`;
       // the table is rebuilt only once per game, so the reveal plays once
-      overlay = `<div class="card final" data-game="${snap.levelId}"><h2>Final scores</h2><p>Six rounds on level ${snap.layout}: ${levelById(snap.layout).name}.</p><ol class="board">${rows}</ol>
+      const early = snap.scores.some((r) => r.points >= snap.winPoints);
+      const how = early ? `${escape(snap.scores[0].name)} reached ${snap.winPoints} points in round ${snap.round}` : `${snap.maxRounds} rounds`;
+      overlay = `<div class="card final" data-game="${snap.levelId}"><h2>Final scores</h2><p>${how} on level ${snap.layout}: ${levelById(snap.layout).name}.</p><ol class="board">${rows}</ol>
         <div class="vote">
           <button type="button" data-vote="ARCHIVE">Keep building on it</button>
           <button type="button" data-vote="RESTART">Choose a new level</button>
@@ -261,6 +283,8 @@ export function renderPhase(): void {
     el.overlay.innerHTML = lastOverlay = overlay;
     const final = el.overlay.querySelector<HTMLElement>(".final");
     if (final) revealScores(final);
+    const round = el.overlay.querySelector<HTMLElement>(".card.round");
+    if (round) fillTracks(round, snap.winPoints);
   }
   const t = el.overlay.querySelector(".tally");
   if (t && t.textContent !== tally) t.textContent = tally;
@@ -309,6 +333,38 @@ function revealScores(card: HTMLElement): void {
   rows.forEach((row, i) => setTimeout(() => show(row), 500 + i * 650));
   setTimeout(finish, 500 + rows.length * 650 + 600);
 }
+// The round card's bars: after a beat (longer behind the "too simple" stamp),
+// each grows from the points before this round to now, its number counting
+// up; a bar that reaches the goal lights its flag.
+function fillTracks(card: HTMLElement, goal: number): void {
+  const rows = [...card.querySelectorAll<HTMLElement>(".track-row")];
+  const delay = card.classList.contains("simple") ? 1700 : 350;
+  const fill = (row: HTMLElement): void => {
+    const to = Number(row.dataset.to), from = Number(row.dataset.from);
+    row.querySelector<HTMLElement>(".now")!.style.width = `${Math.min(100, (to / goal) * 100)}%`;
+    row.classList.add("filled");
+    const pts = row.querySelector<HTMLElement>(".pts")!;
+    if (reducedMotion.matches || to === from) {
+      pts.textContent = fmt(to);
+      return;
+    }
+    const start = performance.now();
+    const step = (now: number): void => {
+      const k = Math.min(1, (now - start) / 900);
+      pts.textContent = fmt(Math.round((from + (to - from) * (1 - (1 - k) ** 3)) * 10) / 10);
+      if (k < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  };
+  if (reducedMotion.matches) {
+    card.classList.add("shown");
+    rows.forEach(fill);
+    return;
+  }
+  requestAnimationFrame(() => card.classList.add("shown"));
+  rows.forEach((row, i) => setTimeout(() => fill(row), delay + i * 160));
+}
+
 const fmt = (n: number): string => (Number.isInteger(n) ? String(n) : n.toFixed(1));
 let lastGuide = "";
 let lastOverlay = "";

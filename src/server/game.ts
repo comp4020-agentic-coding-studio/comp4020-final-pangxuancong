@@ -5,12 +5,12 @@ import { type Item, demolitionError, placementError } from "../shared/level.ts";
 import { levelById } from "../shared/levels.ts";
 import type { ClientToServer, Handshake, PlayerView, ServerToClient, Snapshot } from "../shared/protocol.ts";
 import {
-  BUILD_IDLE_MS, BUILD_MAX_MS, MAX_PLAYERS, MAX_ROUNDS, type Player, type RoundState,
-  act, canBuild, join, leave, moved, newRoundState, pick, report, tick, touchBuild, vote,
+  BUILD_IDLE_MS, BUILD_MAX_MS, MAX_PLAYERS, MAX_ROUNDS, type Player, type RoundState, WIN_POINTS,
+  act, canBuild, join, leave, moved, newRoundState, pick, report, runComplete, tick, tooSimple, touchBuild, vote,
 } from "../shared/rounds.ts";
 import { type ScoreEvent, killCredit, tally } from "../shared/score.ts";
 import {
-  type LevelRow, currentLevel, destroyItem, finishLevel, insertItem, insertScoreEvent, readItems, readScoreEvents, setRound, startLevel,
+  type LevelRow, currentLevel, destroyItem, finishLevel, insertItem, insertScoreEvent, readItems, readScoreEvents, setRound, startLevel, voidRoundScores,
 } from "./db.ts";
 
 // The server's half of the game: the round state machine on a clock, the level
@@ -34,6 +34,7 @@ export function createGame(io: Server<ClientToServer, ServerToClient>): { levelS
   let scoreEvents: ScoreEvent[] = level ? readScoreEvents(level.id) : [];
   const state: RoundState = newRoundState(level?.round ?? 1, Date.now(), level ? "BUILD" : "SELECT");
   let levelDone = false;
+  let simple = false;
   let traces: { x: number; y: number }[] = [];
   let nextTraces: { x: number; y: number }[] = [];
   // characters of people who have left, for the final table
@@ -61,6 +62,8 @@ export function createGame(io: Server<ClientToServer, ServerToClient>): { levelS
       phaseElapsedMs: now - state.phaseStartedAt,
       buildDeadlineMs: me ? snapshotDeadline(me, now) : null,
       levelDone,
+      tooSimple: state.phase === "RESULTS" && simple,
+      winPoints: WIN_POINTS,
       maxPlayers: MAX_PLAYERS,
       players: state.players.map(
         (p): PlayerView => ({
@@ -84,6 +87,16 @@ export function createGame(io: Server<ClientToServer, ServerToClient>): { levelS
     };
   };
 
+  // Everyone made it: the round's points are void before anyone sees them
+  // (nobody died, so they are all flags). Checked as the last runner reports,
+  // and on the tick in case the run ended by someone leaving.
+  const voidIfTooSimple = (): void => {
+    if (state.phase !== "RUN" || !level || !runComplete(state) || !tooSimple(state)) return;
+    if (!scoreEvents.some((e) => e.round === state.round)) return;
+    scoreEvents = scoreEvents.filter((e) => e.round !== state.round);
+    voidRoundScores(level.id, state.round);
+  };
+
   // Everyone gets a fresh snapshot after any change; a quiet tick sends nothing.
   const broadcast = (): void => {
     const now = Date.now();
@@ -97,9 +110,12 @@ export function createGame(io: Server<ClientToServer, ServerToClient>): { levelS
   setInterval(() => {
     const now = Date.now();
     const before = signature();
-    const t = tick(state, now);
+    voidIfTooSimple();
+    const best = Math.max(0, ...[...tally(scoreEvents).values()].map((r) => r.points));
+    const t = tick(state, now, best);
     if (t?.to === "RESULTS") {
       levelDone = t.levelDone;
+      simple = t.tooSimple;
       traces = nextTraces;
       nextTraces = [];
     }
@@ -210,8 +226,8 @@ export function createGame(io: Server<ClientToServer, ServerToClient>): { levelS
       if (!p || (p.result !== "DEAD" && p.result !== "FINISHED") || !level) return;
       if (!report(state, id, p.result)) return;
       if (p.result === "DEAD" && Number.isFinite(p.x) && Number.isFinite(p.y)) nextTraces.push({ x: Math.round(p.x), y: Math.round(p.y) });
-      // +1 for the flag; +0.2 to whoever placed the spike that killed someone else
-      // (the level's own spikes are not in `items`, so they credit nobody)
+      // +1 for the flag; +0.2 to whoever placed the spike or launcher that killed
+      // someone else (the level's own pieces are not in `items`: they credit nobody)
       const scorer = p.result === "FINISHED" ? id : killCredit(id, items.find((i) => i.id === p.by));
       if (scorer) {
         const who = state.players.find((q) => q.id === scorer);
@@ -220,6 +236,7 @@ export function createGame(io: Server<ClientToServer, ServerToClient>): { levelS
         scoreEvents.push(e);
         insertScoreEvent(level.id, e);
       }
+      voidIfTooSimple();
       broadcast();
     });
 

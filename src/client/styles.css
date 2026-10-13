@@ -196,6 +196,69 @@ button.danger { background: var(--red); border-color: var(--red); }
 .card .who { display: inline-flex; align-items: center; gap: 0.4rem; }
 .card .gain { color: var(--green); font-weight: 600; }
 .card .first td { font-weight: 700; }
+/* the round card: a bar per player toward the points that win */
+.card.round { min-width: min(31rem, 92%); position: relative; transform: translateY(10px) scale(0.98); opacity: 0; transition: transform 320ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 260ms; }
+.card.round.shown { transform: none; opacity: 1; }
+.tracks { list-style: none; margin: 0.7rem 0 0.2rem; padding: 0; display: grid; gap: 0.45rem; text-align: left; }
+.track-row {
+  display: grid;
+  grid-template-columns: 1.6rem minmax(5.5rem, 7rem) 1fr 2.4rem 2.2rem;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.5rem;
+  border-radius: 9px;
+  background: rgba(43, 42, 40, 0.035);
+  transition: background 400ms, box-shadow 400ms;
+}
+.track-row .who { display: grid; font-weight: 600; font-size: 0.9rem; line-height: 1.15; }
+.track-row .who small { font-weight: 400; font-size: 0.72rem; color: var(--ink-soft); }
+/* a wooden rail with notches at each point, and a little flag at the goal */
+.track { position: relative; height: 0.8rem; border-radius: 99px; background: #eadbc4; box-shadow: inset 0 0 0 1.5px #c9ab83; overflow: visible; }
+.track i { position: absolute; top: 2px; bottom: 2px; width: 1.5px; background: #c9ab83; z-index: 2; }
+.track b { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 99px; }
+.track .was { background: var(--c); opacity: 0.55; }
+.track .now { background: var(--c); box-shadow: inset 0 -2px 0 rgba(43, 42, 40, 0.18); transition: width 900ms cubic-bezier(0.2, 0.7, 0.2, 1); }
+.goal-flag { position: absolute; right: -0.2rem; top: -0.75rem; width: 2px; height: 1.4rem; background: var(--brass); z-index: 3; }
+.goal-flag::after { content: ""; position: absolute; left: 2px; top: 0; border-left: 0.65rem solid #b8b0a3; border-top: 0.3rem solid transparent; border-bottom: 0.3rem solid transparent; transition: border-color 300ms; }
+.track-row .gain { color: var(--green); font-weight: 700; font-size: 0.85rem; text-align: right; opacity: 0; transform: translateY(4px); transition: opacity 300ms, transform 300ms; }
+.track-row.filled .gain { opacity: 1; transform: none; }
+.track-row .pts { font: 700 1.05rem var(--serif); text-align: right; font-variant-numeric: tabular-nums; }
+.track-row.won.filled { background: #fbefd2; box-shadow: 0 0 0 1.5px #e0bf77; transition-delay: 800ms; }
+.track-row.won.filled .goal-flag::after { border-left-color: var(--red); transition-delay: 800ms; }
+.goal-note { font-size: 0.78rem; margin-top: 0.4rem !important; }
+/* everyone made it: a red rubber stamp lands on the card, then lifts */
+.card.round.simple .body { animation: under-stamp 1700ms both; }
+@keyframes under-stamp { 0%, 70% { opacity: 0.25; filter: blur(1px); } 100% { opacity: 1; filter: none; } }
+.stamp {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  z-index: 5;
+  pointer-events: none;
+  color: var(--red);
+  font-family: var(--serif);
+  animation: stamp 2600ms cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+.stamp span, .stamp small {
+  display: block;
+  padding: 0 0.6rem;
+  border: 3px solid currentColor;
+  background: rgba(252, 249, 242, 0.92);
+  letter-spacing: 0.06em;
+  transform: rotate(-6deg);
+}
+.stamp span { font-size: clamp(2rem, 5vw, 3.1rem); font-weight: 600; text-transform: uppercase; border-radius: 6px 6px 0 0; line-height: 1.15; }
+.stamp small { margin-top: -3px; font-size: 1rem; text-transform: uppercase; border-top: none; border-radius: 0 0 6px 6px; padding-bottom: 0.15rem; }
+@keyframes stamp {
+  0% { transform: scale(2.2); opacity: 0; }
+  14% { transform: scale(0.94); opacity: 1; }
+  20% { transform: scale(1.03); }
+  26%, 62% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(0.9) translateY(-28%); opacity: 0; }
+}
+
 .vote { display: flex; justify-content: center; gap: 0.6rem; margin-top: 0.8rem; }
 .vote button { padding: 0.55rem 1.1rem; }
 .vote button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
@@ -356,5 +419,7 @@ kbd {
 }
 @media (prefers-reduced-motion: reduce) {
   .count { animation: none; }
-  .piece, .steps li, .board .row, .board .bar span { transition: none; }
+  .piece, .steps li, .board .row, .board .bar span, .card.round, .track .now, .track-row .gain { transition: none; }
+  .stamp { animation: none; opacity: 0; }
+  .card.round.simple .body { animation: none; }
 }

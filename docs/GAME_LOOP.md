@@ -19,8 +19,10 @@ Before a game, everyone connected picks one of three fixed courses
 starts a 20 s count; it closes early once everyone has picked. Most picks
 wins, a tie goes to the lower level number. Picks are ephemeral.
 
-A game lasts **six rounds** on one level. After round 6 comes LEVEL_END: the
-final scores, and a vote on what happens to the level (below). Each player
+A game on one level ends at the end of the round in which someone reaches
+**4 points**, or after **six rounds**, whichever comes first (decided by the
+human, 2026-10-13). Then comes LEVEL_END: the final scores, and a vote on
+what happens to the level (below). Each player
 adds at most one item per round.
 
 **At most four players** are on a round. Anyone beyond that spectates, and
@@ -87,15 +89,27 @@ walked-away player cannot hold RUN forever.
 
 When the run completes: RESULTS shows who finished, who fell and the points
 just earned for about 3.5 s, every level object is kept, characters reset,
-the round increments, and the next BUILD starts (LEVEL_END after round 6).
+the round increments, and the next BUILD starts (LEVEL_END after round 6, or once someone has 4 points).
 
-## Scores (decided by the human, 2026-10-06)
+## Scores (decided by the human, 2026-10-06; amended 2026-10-13)
 
-Within one game of six rounds:
+Within one game:
 
 - reaching the flag: **+1** point;
-- each other player killed by a Spike you placed: **+0.2** points. Dying on
-  your own spike scores nothing; falls and fan pushes score nobody.
+- each other player killed by a Spike or Launcher you placed: **+0.2**
+  points. Dying on your own trap scores nothing; falls, fan pushes and the
+  course's own pieces score nobody;
+- **too simple:** if everyone who ran this round reached the flag (players
+  who disconnected do not count either way), nobody scores that round. A
+  red "Too simple · no one wins" stamp lands on the round card, which stays
+  up 1.5 s longer. A level everyone can finish rewards nobody, so the
+  incentive is to build something that catches at least one person;
+- **4 points wins:** the game ends at the end of the round in which anyone
+  reaches 4, rather than playing out six rounds. The round card shows each
+  player's bar toward 4, growing from their total before the round.
+
+With one player alone every round is "too simple", so nobody can score
+solo; that follows from the rule and is intended.
 
 Scores are shown on the roster during the game and as a final table at
 LEVEL_END. They belong to that one game: no all-time leaderboard, nothing

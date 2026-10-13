@@ -44,10 +44,13 @@ Loop and rounds:
   (each is DEAD, FINISHED or DISCONNECTED).
 - Each active player gets at most one build action per BUILD phase, so adds
   at most one item per round.
-- A game is six rounds on one level, at most four players; then everyone
-  votes to archive the level (keep building on it next game) or restart bare.
-- Scores (+1 finish, +0.2 per other player killed by your spike) live inside
-  one game only (`docs/GAME_LOOP.md`).
+- A game is played on one level by at most four players and ends at the
+  end of the round in which someone reaches 4 points, or after six rounds;
+  then everyone votes to archive the level (keep building on it next game)
+  or restart bare.
+- Scores (+1 finish, +0.2 per other player killed by your spike or
+  launcher) live inside one game only. A round in which everyone who ran
+  reached the flag scores nobody ("too simple") (`docs/GAME_LOOP.md`).
 - A committed placement belongs to the level and cannot be dragged again.
 
 Level validity:

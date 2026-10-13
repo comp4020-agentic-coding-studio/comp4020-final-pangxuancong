@@ -107,6 +107,7 @@ const HINTS: Record<BuildChoice, string> = {
   spike: "Click the level to put it there. +0.2 for you each time it gets someone else.",
   fan: "Click the level to put it there. R turns which way it blows.",
   moving: "Click the level to put it there. R switches between sliding sideways and up and down.",
+  launcher: "Click the level to put it there. R turns where it fires. One shot a second; a hit knocks a runner out. +0.2 for you each time it gets someone else.",
   bomb: "Click a placed piece to demolish it. Anyone's piece can go.",
 };
 

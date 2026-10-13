@@ -1,6 +1,7 @@
 // Scores inside one game (docs/GAME_LOOP.md): +1 for reaching the flag, +0.2
-// to the placer for each other player killed on their spike. Kept as events so
-// a round's gains and the final table come from the same record.
+// to the placer for each other player killed by their spike or launcher. A
+// round where everyone made it scores nobody. Kept as events so a round's
+// gains and the final table come from the same record.
 
 export interface ScoreEvent {
   round: number;
@@ -31,9 +32,9 @@ export function tally(events: readonly ScoreEvent[], round?: number): Map<string
   return out;
 }
 
-// Who, if anyone, scores for a death: the spike's placer, unless it was their
-// own spike.
-export function killCredit(victimId: string, spike: { type: string; createdById: string } | undefined): string | null {
-  if (!spike || spike.type !== "spike" || !spike.createdById || spike.createdById === victimId) return null;
-  return spike.createdById;
+// Who, if anyone, scores for a death: the placer of the spike or launcher,
+// unless it was their own.
+export function killCredit(victimId: string, trap: { type: string; createdById: string } | undefined): string | null {
+  if (!trap || (trap.type !== "spike" && trap.type !== "launcher") || !trap.createdById || trap.createdById === victimId) return null;
+  return trap.createdById;
 }

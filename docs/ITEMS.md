@@ -10,6 +10,7 @@ placeables. Keep the pool small.
 | Spike | lethal area | overlap: RUNNING → DEAD. Always visually obvious, no gore | position |
 | Fan | continuous push | a 1×1 fan blowing along one of four directions; inside its 4-cell zone a player is accelerated that way. Only the fan itself occupies space; the zone may cross anything | position; R turns the direction |
 | Moving Platform | timing | a 2-cell plank sliding back and forth along a track (5×1 horizontal, 2×4 vertical) on a fixed 6 s cycle (top speed about 1.6 cells a second) from the start of the run; the whole track is its footprint | position; R switches axis |
+| Launcher | a hazard on a beat | a 1×1 block firing one shot a second along one of four directions, from the start of the run, the same on every client. A shot flies at 300 px/s until the first solid thing (course block or placed piece) or the world's edge, then vanishes; a moving plank stops it too. A runner it touches (as drawn, about 24×44 px) is knocked along the shot and up, through everything, until they leave the level: DEAD | position; R turns the direction |
 | Demolition Bomb | remove one earlier object | BUILD-phase action, see below; never stays in the level | target |
 
 ## Demolition Bomb
@@ -47,9 +48,15 @@ Never run pathfinding to keep the level completable.
 
 ## Kill credit
 
-A Spike remembers who placed it (their player id). When another player dies
-on it, that placer scores +0.2 (`docs/GAME_LOOP.md`). The client reports
-which spike killed it; the server checks the spike exists. Items carried
+A Spike or Launcher remembers who placed it (their player id). When another
+player dies on it, that placer scores +0.2 (`docs/GAME_LOOP.md`). The client
+reports which piece killed it; the server checks the piece exists and is a
+spike or launcher.
+
+Launcher shots are not sent over the network: every client works out the
+same volley from the time into the run (`shotsAt` in `src/shared/level.ts`)
+and the same range (`shotRange`, measured against static solids). Each
+client decides only whether its own runner was hit, as with spikes. Items carried
 into an archived game keep their placer.
 
 ## Shared ownership

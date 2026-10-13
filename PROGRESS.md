@@ -55,8 +55,12 @@ the live site and the pushed repo are still the crit 8 machine (tag `crit-8`).
   on any piece, or skip. AFK: auto-skip after 40 s idle, 120 s at most.
 - RUN: wall slide, 250 ms wall-jump grace, climb by jumping into a wall;
   spikes and falls kill; the flag finishes. Idle 30 s drops out.
-- Scores: +1 for the flag, +0.2 to a spike's placer for each other player it
-  kills. RESULTS shows the round's gains.
+- Scores: +1 for the flag, +0.2 to a spike's or launcher's placer for each
+  other player it kills. If everyone who ran made it, nobody scores that
+  round ("Too simple" stamp). First to 4 points ends the game at that
+  round's end. The round card animates each player's bar toward 4.
+- Launcher (key 6): one shot a second in one of four directions; a hit
+  knocks the runner out of the level.
 - After six rounds: final scores and a vote. Archive (majority, tie or
   timeout) starts the next game on a copy of the level; restart returns to
   level choice. The final table reveals from last place up.
@@ -88,6 +92,8 @@ Dockerfile has not been run (no Docker here).
    high refresh rate screens~~ 2026-10-07.
    ~~Edge badges for off-screen runners, watching after you are out (F29)~~
    2026-10-07.
+   ~~"Too simple" rule, first to 4 points with round bars, Launcher (F30–F32)~~
+   2026-10-13.
 4. Human playtest; tune movement, fan strength, the base course and whether
    +0.2 per kill crowds out helping.
 5. Motion and sound (F18), reconnect robustness.
@@ -194,3 +200,14 @@ the red-cross badge, which faded; arrow keys switched to free look and
 Big Dog's badge appeared at the right edge; no console errors. Not checked:
 watching after finishing (same code path as after dying) or as a visitor,
 touch (badges need a click), real people.
+
+2026-10-13, local: "too simple", first to 4, round bars, Launcher.
+`pnpm typecheck` and `pnpm check` (40 tests) green against a separate server
+(port 8092). Browser, two sessions: both reached the flag, Chicken's +1 was
+taken back and the stamp played over the round card; next round Chicken's
+launcher shot Big Dog out of the level ("Shot out of the level by Chicken's
+launcher"), Chicken finished: +1.2 with the bar growing from 0; on The
+Tower, Chicken finishing four rounds while Big Dog fell ended the game after
+round 4 ("Chicken reached 4 points in round 4"); no console errors. Not
+checked: a shot fired at someone else's runner seen from a third client in
+real network lag, a hit while riding a moving plank, real people.

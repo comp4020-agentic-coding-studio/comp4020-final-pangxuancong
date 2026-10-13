@@ -80,6 +80,17 @@ puff on take-off and a wider one on landing, sparks on a wall scrape or wall
 kick and on a spring. Remote players get run and landing dust too. Particles
 are decoration only and never carry information.
 
+Round card: one wooden rail per player with a notch per point and a small
+brass flag at 4; the bar grows from the total before the round to now and
+the number counts up; reaching 4 turns the flag red and the row gold. When
+everyone made it, a red rubber stamp "Too simple · no one wins" drops onto
+the card (scale in, settle, lift away) while the card behind is dimmed.
+
+Launcher: a riveted steel block with a black barrel ringed in brass and a
+red centre; shots are small dark iron balls with a faint trail. Each shot
+gives a puff and a small recoil; a hit throws the runner spinning out of
+the level with a brief camera shake.
+
 Final scores: rows reveal from last place to first, each bar growing and its
 number counting up; the winner's row lights last, then the vote appears.
 

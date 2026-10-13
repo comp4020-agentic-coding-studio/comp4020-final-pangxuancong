@@ -33,7 +33,9 @@ export interface Snapshot {
   phaseRemainingMs: number | null;
   phaseElapsedMs: number; // moving platforms keep time from the start of RUN
   buildDeadlineMs: number | null; // for the receiving player only
-  levelDone: boolean; // RESULTS after the last round
+  levelDone: boolean; // RESULTS after the last round, or once someone has WIN_POINTS
+  tooSimple: boolean; // RESULTS: everyone reached the flag, so nobody scored
+  winPoints: number;
   maxPlayers: number;
   players: PlayerView[];
   scores: ScoreRow[];
@@ -67,7 +69,7 @@ export interface ClientToServer {
   "build:bomb": (targetId: string, ack: Ack) => void;
   "build:skip": (ack: Ack) => void;
   "run:pose": (p: Pose) => void;
-  // `by`: the spike that killed this player, if one did
+  // `by`: the spike or launcher that killed this player, if one did
   "run:result": (p: { result: "DEAD" | "FINISHED"; x: number; y: number; by?: string }) => void;
   "level:vote": (v: Vote) => void;
   "level:pick": (level: number) => void;

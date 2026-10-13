@@ -169,6 +169,34 @@ export function drawItem(g: G, type: ItemType, rot: number, ox: number, oy: numb
       g.fillCircle(cx + d.x * 13, cy + d.y * 13, 3);
       return;
     }
+    case "launcher": {
+      // a riveted steel block with a brass-ringed barrel facing its direction
+      const d = FAN_DIRS[rot % 4];
+      const cx = ox + CELL / 2, cy = oy - CELL / 2;
+      shadow(g, ox + 4, oy - 36, 32, 32, 6);
+      g.fillStyle(C.steelDark, 1);
+      g.fillRoundedRect(ox + 4, oy - 36, 32, 32, 6);
+      g.fillStyle(C.steel, 1);
+      g.fillRoundedRect(ox + 6, oy - 34, 28, 28, 5);
+      g.fillStyle(C.steelLight, 0.55);
+      g.fillRect(ox + 9, oy - 31, 22, 3);
+      for (const [bx, by] of [[10, -30], [30, -30], [10, -10], [30, -10]]) bolt(g, ox + bx, oy + by);
+      // the barrel: along the direction, out to the cell edge
+      const len = 17, half = 6;
+      const px = -d.y, py = d.x; // across the barrel
+      g.fillStyle(C.ink, 1);
+      g.fillPoints([
+        { x: cx + px * half, y: cy + py * half }, { x: cx + px * half + d.x * len, y: cy + py * half + d.y * len },
+        { x: cx - px * half + d.x * len, y: cy - py * half + d.y * len }, { x: cx - px * half, y: cy - py * half },
+      ], true);
+      g.lineStyle(3, C.brass, 1);
+      g.lineBetween(cx + px * (half + 1) + d.x * (len - 2), cy + py * (half + 1) + d.y * (len - 2), cx - px * (half + 1) + d.x * (len - 2), cy - py * (half + 1) + d.y * (len - 2));
+      g.fillStyle(C.red, 1);
+      g.fillCircle(cx, cy, 5);
+      g.fillStyle(0xffffff, 0.35);
+      g.fillCircle(cx - 1.5, cy - 1.5, 1.6);
+      return;
+    }
     case "moving": {
       // the track, then the plank at its start; the plank is moved by the scene
       if (rot) {
@@ -181,6 +209,18 @@ export function drawItem(g: G, type: ItemType, rot: number, ox: number, oy: numb
       return;
     }
   }
+}
+
+// A launcher's shot: a dark iron ball with a highlight and a short trail.
+export function drawShot(g: G, x: number, y: number, dx: number, dy: number, r: number): void {
+  g.fillStyle(C.ink, 0.1);
+  g.fillCircle(x - dx * 9, y - dy * 9, r * 0.8);
+  g.fillStyle(C.ink, 0.06);
+  g.fillCircle(x - dx * 17, y - dy * 17, r * 0.6);
+  g.fillStyle(C.ink, 1);
+  g.fillCircle(x, y, r);
+  g.fillStyle(C.steelLight, 0.7);
+  g.fillCircle(x - r * 0.35, y - r * 0.35, r * 0.32);
 }
 
 // The fan's blades and wind, drawn around (cx, cy); `spin` is an angle.

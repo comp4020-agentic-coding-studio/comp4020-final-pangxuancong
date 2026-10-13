@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import {
   BUILD_IDLE_MS, BUILD_MAX_MS, COUNTDOWN_MS, MAX_PLAYERS, MAX_ROUNDS, RESULTS_MS, RUN_IDLE_MS, type RoundState, VOTE_MS,
-  SELECT_MS, act, join, leave, moved, newRoundState, pick, report, tick, touchBuild, vote,
+  SELECT_MS, STAMP_MS, WIN_POINTS, act, join, leave, moved, newRoundState, pick, report, tick, tooSimple, touchBuild, vote,
 } from "../src/shared/rounds.ts";
 import { type ScoreEvent, killCredit, tally } from "../src/shared/score.ts";
 
@@ -100,7 +100,7 @@ it("S4: RUN continues while anyone is RUNNING and ends when nobody is", () => {
   moved(s, "b", t);
   expect(tick(s, t)).toBeNull(); // B is still running: no gameplay timer
   report(s, "b", "DEAD");
-  expect(tick(s, t + 1)).toEqual({ to: "RESULTS", levelDone: false });
+  expect(tick(s, t + 1)).toEqual({ to: "RESULTS", levelDone: false, tooSimple: false });
   expect(tick(s, t + 1 + RESULTS_MS)).toEqual({ to: "BUILD", newLevel: false });
   expect(s.round).toBe(2);
   expect(s.players.every((p) => p.build === "WAITING" && p.run === null)).toBe(true);
@@ -135,7 +135,7 @@ const toLevelEnd = (s: RoundState, ids: string[]): number => {
     for (const id of ids) act(s, id, "SKIPPED");
     t = toRun(s, t);
     for (const id of ids) report(s, id, "DEAD");
-    expect(tick(s, ++t)).toEqual({ to: "RESULTS", levelDone: round === MAX_ROUNDS });
+    expect(tick(s, ++t)).toEqual({ to: "RESULTS", levelDone: round === MAX_ROUNDS, tooSimple: false });
     t += RESULTS_MS;
     expect(tick(s, t)?.to).toBe(round === MAX_ROUNDS ? "LEVEL_END" : "BUILD");
   }
@@ -223,6 +223,8 @@ it("S7: +1 for the flag, +0.2 to the placer per other player spiked, nothing for
   expect(killCredit("b", spike)).toBe("a");
   expect(killCredit("a", spike)).toBeNull(); // your own spike
   expect(killCredit("b", { type: "platform", createdById: "a" })).toBeNull();
+  expect(killCredit("b", { type: "launcher", createdById: "a" })).toBe("a"); // shot out of the level
+  expect(killCredit("a", { type: "launcher", createdById: "a" })).toBeNull();
   expect(killCredit("b", undefined)).toBeNull(); // a fall
   const events: ScoreEvent[] = [
     { round: 1, playerId: "a", name: "A", kind: "finish" },
@@ -242,4 +244,44 @@ it("goes to the archive-or-restart vote after six rounds, not before", () => {
   join(s, "a", "A", 0);
   toLevelEnd(s, ["a"]);
   expect(s.phase).toBe("LEVEL_END");
+});
+
+it("calls a round too simple when everyone who ran reached the flag, and holds its card longer", () => {
+  const s = twoBuilding();
+  act(s, "a", "SKIPPED");
+  act(s, "b", "SKIPPED");
+  let t = toRun(s, 0);
+  report(s, "a", "FINISHED");
+  expect(tooSimple(s)).toBe(false); // B is still running
+  report(s, "b", "FINISHED");
+  expect(tooSimple(s)).toBe(true);
+  expect(tick(s, ++t)).toEqual({ to: "RESULTS", levelDone: false, tooSimple: true });
+  expect(tick(s, t + RESULTS_MS)).toBeNull(); // the stamp gets its time
+  expect(tick(s, t + RESULTS_MS + STAMP_MS)?.to).toBe("BUILD");
+
+  // one death and it is a real round; someone who left does not count
+  for (const id of ["a", "b"]) act(s, id, "SKIPPED");
+  t = toRun(s, t + RESULTS_MS + STAMP_MS);
+  report(s, "a", "FINISHED");
+  leave(s, "b");
+  expect(tooSimple(s)).toBe(true);
+  expect(tick(s, ++t)).toMatchObject({ tooSimple: true });
+});
+
+it("ends the game early once someone has the points to win, at the end of that round", () => {
+  const s = twoBuilding();
+  act(s, "a", "SKIPPED");
+  act(s, "b", "SKIPPED");
+  let t = toRun(s, 0);
+  report(s, "a", "FINISHED");
+  report(s, "b", "DEAD");
+  expect(tick(s, ++t, WIN_POINTS - 0.2)).toMatchObject({ to: "RESULTS", levelDone: false });
+  expect(tick(s, t + RESULTS_MS, WIN_POINTS - 0.2)?.to).toBe("BUILD");
+  for (const id of ["a", "b"]) act(s, id, "SKIPPED");
+  t = toRun(s, t + RESULTS_MS);
+  report(s, "a", "FINISHED");
+  report(s, "b", "DEAD");
+  expect(tick(s, ++t, WIN_POINTS)).toMatchObject({ to: "RESULTS", levelDone: true });
+  expect(tick(s, t + RESULTS_MS, WIN_POINTS)?.to).toBe("LEVEL_END");
+  expect(s.round).toBe(2);
 });

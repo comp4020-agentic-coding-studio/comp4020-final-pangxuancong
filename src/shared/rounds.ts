@@ -4,9 +4,11 @@
 // passed in.
 
 export const MAX_ROUNDS = 6;
+export const WIN_POINTS = 4; // reaching this at a round's end wins the game early
 export const MAX_PLAYERS = 4;
 export const COUNTDOWN_MS = 3000;
-export const RESULTS_MS = 3500;
+export const RESULTS_MS = 4500; // the round card and its score bars
+export const STAMP_MS = 1500; // extra, when everyone made it: "too simple"
 export const VOTE_MS = 40_000; // LEVEL_END: the score reveal, then archive or restart
 export const SELECT_MS = 20_000; // after the first pick, the rest have this long
 export const LEVEL_IDS = [1, 2, 3] as const;
@@ -44,7 +46,7 @@ export interface RoundState {
 export type Transition =
   | { to: "COUNTDOWN" }
   | { to: "RUN" }
-  | { to: "RESULTS"; levelDone: boolean }
+  | { to: "RESULTS"; levelDone: boolean; tooSimple: boolean }
   | { to: "LEVEL_END" }
   | { to: "SELECT" }
   | { to: "BUILD"; newLevel: false }
@@ -178,10 +180,18 @@ export const buildComplete = (s: RoundState): boolean => {
 
 export const runComplete = (s: RoundState): boolean => activePlayers(s).every((p) => p.run !== "RUNNING");
 
+// Everyone who stayed in the run reached the flag: the level was too simple,
+// and nobody scores that round. Someone who left does not count either way.
+export const tooSimple = (s: RoundState): boolean => {
+  const ran = activePlayers(s).filter((p) => p.run !== "DISCONNECTED");
+  return ran.length > 0 && ran.every((p) => p.run === "FINISHED");
+};
+
 // Applies timeouts and moves to the next phase when its condition holds.
 // Returns the transition taken, if any; the caller does the side effects
-// (persisting the round, starting a new level, broadcasting).
-export function tick(s: RoundState, now: number): Transition | null {
+// (persisting the round, starting a new level, broadcasting). `topPoints` is
+// the best score in the game so far: WIN_POINTS ends the game at round end.
+export function tick(s: RoundState, now: number, topPoints = 0): Transition | null {
   switch (s.phase) {
     case "SELECT": {
       const here = s.players.filter((p) => p.connected);
@@ -222,15 +232,16 @@ export function tick(s: RoundState, now: number): Transition | null {
     case "RUN": {
       for (const p of activePlayers(s)) if (p.run === "RUNNING" && now - p.lastActivityAt >= RUN_IDLE_MS) p.run = "DEAD";
       if (!runComplete(s)) return null;
-      const levelDone = s.round >= MAX_ROUNDS;
+      const simple = tooSimple(s);
+      const levelDone = s.round >= MAX_ROUNDS || topPoints >= WIN_POINTS;
       s.phase = "RESULTS";
       s.phaseStartedAt = now;
-      s.phaseEndsAt = now + RESULTS_MS;
-      return { to: "RESULTS", levelDone };
+      s.phaseEndsAt = now + RESULTS_MS + (simple ? STAMP_MS : 0);
+      return { to: "RESULTS", levelDone, tooSimple: simple };
     }
     case "RESULTS": {
       if (now < s.phaseEndsAt!) return null;
-      if (s.round >= MAX_ROUNDS) {
+      if (s.round >= MAX_ROUNDS || topPoints >= WIN_POINTS) {
         s.phase = "LEVEL_END";
         s.phaseStartedAt = now;
         s.phaseEndsAt = now + VOTE_MS;

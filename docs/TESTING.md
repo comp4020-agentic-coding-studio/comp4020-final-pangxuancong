@@ -32,7 +32,9 @@ also a player, and holds BUILD until they act or the AFK limit passes.
 | S4 | A FINISHED + B DEAD → next BUILD; A FINISHED + B RUNNING → still RUN | rounds progress without timers | `spec/rounds.test.ts` (+ run idle limit, six rounds then a fresh level) |
 | S5 | Bomb on a placed item: removed, removal persists, action consumed. Bomb on START, GOAL, base geometry: rejected | deadlock is recoverable (P4) | rules: `spec/level.test.ts`; server: `spec/realtime.test.ts` |
 | S6 | placement inside START or over GOAL rejected; a legal one accepted. Never test completability | only technical validity (P3) | `spec/level.test.ts` |
-| S7 | +1 for finishing, +0.2 to the placer for each other player killed on their spike, nothing for your own spike; scores reset per game | scores stay inside one game | `spec/rounds.test.ts` |
+| S7 | +1 for finishing, +0.2 to the placer for each other player killed on their spike or launcher, nothing for your own; scores reset per game | scores stay inside one game | `spec/rounds.test.ts` |
+| S7a | everyone who ran finished → `tooSimple`, RESULTS held `STAMP_MS` longer (server voids the round's events); a disconnect does not count; reaching `WIN_POINTS` at round end goes to LEVEL_END | too simple; first to 4 | `spec/rounds.test.ts`; void and early end checked in the browser (2026-10-13) |
+| — | a launcher fires once a second, same shots at the same moment, range ends at the first solid in line or the world's edge; four directions | the Launcher is deterministic | `spec/level.test.ts` |
 | S8 | after round 6: majority vote, tie or timeout archives; archive copies the items into the next game, restart starts bare | a finished level can live on | `spec/rounds.test.ts` (vote); copy checked in the browser (2026-10-06) |
 | — | a moving platform's velocity is the derivative of its offset, and its top speed stays under 2 cells a second | readable, frame-rate independent motion | `spec/level.test.ts` |
 | S10 | every course: zones clear of blocks and fixtures, and a coarse grid search reaches GOAL from START on the bare course; a wall course fails | each course starts finishable | `spec/levels.test.ts` |

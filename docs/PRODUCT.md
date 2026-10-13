@@ -65,7 +65,7 @@ consequences beat a large inventory of weak ones.
 | Only technical validity is enforced | START/GOAL protected; no path checks | yes (S6) | no |
 | Items are neither good nor bad | same object can help or hurt | no | yes |
 | Challenge is the level | forgiving wall movement | rule only (unit test) | yes |
-| Scores stay inside one game | +1 finish, +0.2 per other player killed by your spike; reset every game; no all-time board | yes (S7) | yes |
+| Scores stay inside one game | +1 finish, +0.2 per other player killed by your spike or launcher; a round everyone finishes scores nobody; first to 4 ends the game; reset every game; no all-time board | yes (S7) | yes |
 | A finished level can live on | archive (continue on a copy) or restart, by vote | yes (S8) | yes |
 
 ## Priority order

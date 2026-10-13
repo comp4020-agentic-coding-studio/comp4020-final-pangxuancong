@@ -18,12 +18,12 @@ export const DEATH_Y = HEIGHT + 40;
 export interface CellRect { col: number; row: number; w: number; h: number }
 export interface PixelRect { x: number; y: number; w: number; h: number }
 
-export const ITEM_TYPES = ["platform", "spring", "spike", "fan", "moving"] as const;
+export const ITEM_TYPES = ["platform", "spring", "spike", "fan", "moving", "launcher"] as const;
 export type ItemType = (typeof ITEM_TYPES)[number];
 export type BuildChoice = ItemType | "bomb";
 
-// rot: platform and moving platform 0 horizontal / 1 vertical; fan blows
-// 0 right, 1 down, 2 left, 3 up; springs and spikes are always 0
+// rot: platform and moving platform 0 horizontal / 1 vertical; fan blows and
+// launcher fires 0 right, 1 down, 2 left, 3 up; springs and spikes are always 0
 export interface Item {
   id: string;
   type: ItemType;
@@ -40,7 +40,7 @@ export interface Item {
 export interface Proposal { type: ItemType; col: number; row: number; rot: number }
 type Placed = Pick<Item, "type" | "col" | "row" | "rot">;
 
-export const ROTATIONS: Record<ItemType, number> = { platform: 2, spring: 1, spike: 1, fan: 4, moving: 2 };
+export const ROTATIONS: Record<ItemType, number> = { platform: 2, spring: 1, spike: 1, fan: 4, moving: 2, launcher: 4 };
 
 export const footprint = (p: Placed): CellRect => {
   if (p.type === "platform") return p.rot ? { col: p.col, row: p.row, w: 1, h: 3 } : { col: p.col, row: p.row, w: 3, h: 1 };
@@ -92,7 +92,62 @@ export function body(p: Placed): PixelRect {
       return { x: x + 6, y: y + 6, w: 28, h: 28 };
     case "moving":
       return { x, y, w: 2 * CELL, h: 20 };
+    case "launcher": // the barrel housing is solid
+      return { x: x + 4, y: y + 4, w: 32, h: 32 };
   }
+}
+
+// A launcher fires one shot a second from the start of the run, the same on
+// every client. A shot flies straight until it meets anything solid or the
+// edge of the world, and vanishes; a player it meets is knocked out of the
+// level.
+export const LAUNCH_INTERVAL_MS = 1000;
+export const SHOT_SPEED = 300; // px/s: slower than a run, so it can be dodged
+export const SHOT_RADIUS = 7;
+export const SHOT_KNOCKBACK = { x: 900, y: -520 }; // px/s, along the shot and up
+
+export interface Shot { launcherId: string; x: number; y: number; firedAt: number }
+
+// Where a shot leaves the barrel, and its direction.
+export function muzzle(p: Placed): { x: number; y: number; dx: number; dy: number } {
+  const d = FAN_DIRS[p.rot % 4];
+  const cx = (p.col + 0.5) * CELL, cy = (p.row + 0.5) * CELL;
+  return { x: cx + d.x * (CELL / 2 + SHOT_RADIUS), y: cy + d.y * (CELL / 2 + SHOT_RADIUS), dx: d.x, dy: d.y };
+}
+
+// How far a shot travels before it hits something: the first solid rectangle
+// or the edge of the world along its line. Computed once when it is fired.
+export function shotRange(p: Placed, solids: readonly PixelRect[]): number {
+  const m = muzzle(p);
+  const edge = m.dx > 0 ? WIDTH - m.x : m.dx < 0 ? m.x : m.dy > 0 ? HEIGHT - m.y : m.y;
+  let range = Math.max(0, edge);
+  const r = SHOT_RADIUS;
+  for (const s of solids) {
+    if (m.dx !== 0) {
+      if (m.y + r <= s.y || m.y - r >= s.y + s.h) continue;
+      const near = m.dx > 0 ? s.x - (m.x + r) : m.x - r - (s.x + s.w);
+      if (near >= -r) range = Math.min(range, Math.max(0, near));
+    } else {
+      if (m.x + r <= s.x || m.x - r >= s.x + s.w) continue;
+      const near = m.dy > 0 ? s.y - (m.y + r) : m.y - r - (s.y + s.h);
+      if (near >= -r) range = Math.min(range, Math.max(0, near));
+    }
+  }
+  return range;
+}
+
+// The shots in the air at a moment of the run, for a launcher with that range.
+export function shotsAt(p: Placed & { id: string }, range: number, runMs: number): Shot[] {
+  const out: Shot[] = [];
+  const m = muzzle(p);
+  const life = (range / SHOT_SPEED) * 1000;
+  for (let k = Math.max(0, Math.ceil((runMs - life) / LAUNCH_INTERVAL_MS)); k * LAUNCH_INTERVAL_MS <= runMs; k++) {
+    const firedAt = k * LAUNCH_INTERVAL_MS;
+    const d = ((runMs - firedAt) / 1000) * SHOT_SPEED;
+    if (d > range) continue;
+    out.push({ launcherId: p.id, x: m.x + m.dx * d, y: m.y + m.dy * d, firedAt });
+  }
+  return out;
 }
 
 export const cellToPixels = (r: CellRect): PixelRect => ({ x: r.col * CELL, y: r.row * CELL, w: r.w * CELL, h: r.h * CELL });
