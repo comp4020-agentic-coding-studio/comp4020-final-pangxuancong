@@ -12,7 +12,11 @@ export const STAMP_MS = 1500; // extra, when everyone made it: "too simple"
 export const VOTE_MS = 40_000; // LEVEL_END: the score reveal, then archive or restart
 export const SELECT_MS = 30_000; // after the first player stands under a map, the rest have this long
 export const LOCK_MS = 2000; // everyone under a map: this long to change their mind
-export const DRAW_MS = 5000; // a split vote: the weighted draw, then its result
+// A split vote: the wheel. Voters drop in, it spins and slows, then the
+// result holds (the client animates these from the time into DRAW).
+export const DRAW_INTRO_MS = 900;
+export const DRAW_SPIN_MS = 4800;
+export const DRAW_MS = 7500;
 export const LEVEL_IDS = [1, 2, 3] as const;
 // A dropped connection is not leaving: for this long the round treats the
 // player as still here (a wifi blip costs nothing), and for SEAT_HOLD_MS their
@@ -44,7 +48,9 @@ export interface Player {
 }
 
 // A split vote is settled by a draw weighted by the votes for each map.
-export interface Draw { options: { layout: number; votes: number }[]; result: number }
+// `land` is where in the drawn slice the wheel stops (0..1 across it), so
+// every client's wheel stops at the same spot.
+export interface Draw { options: { layout: number; votes: number }[]; result: number; land: number }
 
 export interface RoundState {
   phase: Phase;
@@ -282,7 +288,7 @@ export function tick(s: RoundState, now: number, topPoints = 0, random: () => nu
       s.phase = "DRAW";
       s.phaseStartedAt = now;
       s.phaseEndsAt = now + DRAW_MS;
-      s.draw = { options, result: drawResult(options, random()) };
+      s.draw = { options, result: drawResult(options, random()), land: 0.2 + 0.6 * random() };
       return { to: "DRAW" };
     }
     case "DRAW": {

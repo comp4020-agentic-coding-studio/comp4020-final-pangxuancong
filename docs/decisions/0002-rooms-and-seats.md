@@ -60,7 +60,8 @@ For dropped connections:
   small lobby room and stand under the sign of the course they want. When
   everyone has chosen (held for 2 s), or 30 s after the first, voting closes.
   All under one sign: that course. Split: a draw weighted by the votes (three
-  to one is 75% to 25%), animated, decided by the server.
+  to one is 75% to 25%), decided by the server and shown as a wheel the
+  voters' heads drop onto, the same on every screen.
 - **A dropped seat is held.** For 8 s the round treats the player as still
   there. After that BUILD and RUN go on without them, as in 0001. For 2
   minutes the seat, character and points stay theirs; back in time, they

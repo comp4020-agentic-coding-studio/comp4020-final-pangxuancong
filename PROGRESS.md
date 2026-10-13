@@ -40,7 +40,8 @@ Playable build-and-run platformer, pushed and deployed to Fly on 2026-10-13
   makes one, or opens a code; a room is `/r/CODE`, with its own level, game
   and four seats. Seats are the four characters, chosen on entry. Before a
   game seated players walk a lobby room and stand under a map sign to vote;
-  a split vote is a weighted draw with an animation. A dropped connection
+  a split vote spins a wheel (slices sized by votes, voters' heads on the
+  rim, ticks and a chime; Sound on/off in the header). A dropped connection
   holds the round 8 s and keeps seat, character and points 2 minutes
   (`docs/decisions/0002-rooms-and-seats.md`).
 

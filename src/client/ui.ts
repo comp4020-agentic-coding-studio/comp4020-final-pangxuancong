@@ -5,7 +5,8 @@ import { CHARACTERS } from "../shared/characters.ts";
 import type { BuildChoice } from "../shared/level.ts";
 import { levelById } from "../shared/levels.ts";
 import type { PlayerView, Snapshot } from "../shared/protocol.ts";
-import type { Vote } from "../shared/rounds.ts";
+import { DRAW_INTRO_MS, DRAW_SPIN_MS, type Draw, type Vote } from "../shared/rounds.ts";
+import { chime, isMuted, plop, setMuted, tick } from "./sound.ts";
 import { iCanBuild, myPlayer, store } from "./state.ts";
 
 const $ = (id: string): HTMLElement => document.getElementById(id)!;
@@ -196,12 +197,11 @@ export function renderPhase(): void {
     case "DRAW": {
       const draw = snap.draw;
       if (!draw) break;
-      const total = draw.options.reduce((n, o) => n + o.votes, 0);
-      guide = "The vote was split, so the map is drawn by lot: more votes, more chance.";
-      const slices = draw.options.map((o) => `<li data-layout="${o.layout}" style="flex:${o.votes}"><b>Map ${o.layout}</b><span>${levelById(o.layout).name}</span><em>${Math.round((o.votes / total) * 100)}%</em></li>`).join("");
-      overlay = `<div class="card draw" data-draw="${snap.levelId}:${draw.options.map((o) => o.layout + "x" + o.votes).join(",")}:${draw.result}" data-result="${draw.result}">
-        <h2>Drawing a map</h2><p>${draw.options.map((o) => `${o.votes} for map ${o.layout}`).join(", ")}</p>
-        <div class="wheel"><ol class="slices">${slices}</ol><i class="needle"></i></div>
+      guide = "The vote was split, so the wheel decides: each vote is a share of it.";
+      overlay = `<div class="card draw" data-draw="${snap.levelId}:${draw.options.map((o) => o.layout + "x" + o.votes).join(",")}:${draw.result}:${draw.land}">
+        <h2>Spin for the map</h2>
+        ${wheel(draw, snap)}
+        <ul class="odds">${draw.options.map((o, i) => `<li style="--c:${SLICE_COLOURS[i]}"><i></i>Map ${o.layout} · ${levelById(o.layout).name}<b>${pct(o.votes, draw)}</b></li>`).join("")}</ul>
         <p class="drawn" aria-live="polite"></p></div>`;
       break;
     }
@@ -299,7 +299,7 @@ export function renderPhase(): void {
     const round = el.overlay.querySelector<HTMLElement>(".card.round");
     if (round) fillTracks(round, snap.winPoints);
     const draw = el.overlay.querySelector<HTMLElement>(".card.draw");
-    if (draw) spinDraw(draw, remaining(snap.phaseRemainingMs) ?? 0);
+    if (draw && snap.draw) spinDraw(draw, snap.draw, snap.phaseElapsedMs + (performance.now() - receivedAt));
   }
   const t = el.overlay.querySelector(".tally");
   if (t && t.textContent !== tally) t.textContent = tally;
@@ -392,46 +392,139 @@ function seatPicker(snap: Snapshot): string {
   return `Take a free seat:<span class="seat-picks">${free.map(({ c, i }) => `<button type="button" class="seat-pick" data-seat="${i}" title="${c.name}">${head(i, c.colour)}${c.name}</button>`).join("")}</span>`;
 }
 
-// The draw: a strip of the maps in the draw, each as wide as its votes. A
-// marker sweeps back and forth across it, slowing, and stops inside the slice
-// the server drew, with time to read the result before the build begins.
-function spinDraw(card: HTMLElement, leftMs: number): void {
-  const strip = card.querySelector<HTMLElement>(".slices")!;
-  const needle = card.querySelector<HTMLElement>(".needle")!;
+// ---------- the wheel ----------
+// A split vote spins a wheel. Each map is a slice as large as its votes;
+// the voters' heads drop into their slice, the wheel spins and slows, the
+// pointer flicking on each peg, and stops where the server's draw says
+// (`result`, at `land` across its slice). The angle is a function of the
+// time into DRAW, so every screen shows the same wheel at the same moment,
+// even one that opens mid-spin.
+
+const SLICE_COLOURS = ["#d9aa72", "#9cb98a", "#8fb0cf"];
+const WHEEL_R = 120;
+const TURNS = 5;
+const pct = (votes: number, draw: Draw): string => `${Math.round((votes / draw.options.reduce((n, o) => n + o.votes, 0)) * 100)}%`;
+
+// each slice's start and end angle, in turns from the top, clockwise
+function slices(draw: Draw): { layout: number; from: number; to: number }[] {
+  const total = draw.options.reduce((n, o) => n + o.votes, 0);
+  let at = 0;
+  return draw.options.map((o) => {
+    const from = at;
+    at += o.votes / total;
+    return { layout: o.layout, from, to: at };
+  });
+}
+
+const polar = (turns: number, r: number): [number, number] => [Math.sin(turns * 2 * Math.PI) * r, -Math.cos(turns * 2 * Math.PI) * r];
+
+function wheel(draw: Draw, snap: Snapshot): string {
+  const parts = slices(draw).map((sl, i) => {
+    const [x1, y1] = polar(sl.from, WHEEL_R), [x2, y2] = polar(sl.to, WHEEL_R);
+    const big = sl.to - sl.from > 0.5 ? 1 : 0;
+    const mid = (sl.from + sl.to) / 2;
+    const [lx, ly] = polar(mid, WHEEL_R * 0.62);
+    const deg = mid * 360;
+    // the voters for this map, as heads on the rim of their slice
+    const voters = snap.players.filter((p) => p.pick === sl.layout && p.character !== null);
+    const heads = voters.map((p, k) => {
+      const t = sl.from + ((k + 1) / (voters.length + 1)) * (sl.to - sl.from);
+      const [hx, hy] = polar(t, WHEEL_R * 0.86);
+      return `<g transform="translate(${hx.toFixed(1)} ${hy.toFixed(1)})"><g class="voter" style="--d:${120 + k * 140 + i * 60}ms"><circle r="15" fill="#fffdf8" stroke="${p.colour}" stroke-width="2.5"/><g transform="translate(-11 -11) scale(0.92)">${HEADS[p.character!]}</g></g></g>`;
+    }).join("");
+    const path = sl.to - sl.from >= 0.9999
+      ? `<circle r="${WHEEL_R}" fill="${SLICE_COLOURS[i]}"/>`
+      : `<path d="M0 0 L${x1.toFixed(2)} ${y1.toFixed(2)} A${WHEEL_R} ${WHEEL_R} 0 ${big} 1 ${x2.toFixed(2)} ${y2.toFixed(2)} Z" fill="${SLICE_COLOURS[i]}" stroke="#6b4728" stroke-width="2"/>`;
+    return `<g class="slice" data-layout="${sl.layout}">${path}
+      <g transform="translate(${lx.toFixed(1)} ${ly.toFixed(1)}) rotate(${deg.toFixed(1)})"><text class="sl-n" y="-4">${sl.layout}</text><text class="sl-p" y="14">${pct(draw.options[i].votes, draw)}</text></g>${heads}</g>`;
+  }).join("");
+  // pegs on the rim at every slice boundary
+  const pegs = slices(draw).map((sl) => {
+    const [x, y] = polar(sl.from, WHEEL_R - 4);
+    return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="4" fill="#c9a03d" stroke="#6b4728" stroke-width="1.5"/>`;
+  }).join("");
+  const box = WHEEL_R + 26;
+  return `<div class="wheel"><svg viewBox="${-box} ${-box} ${box * 2} ${box * 2}" role="img" aria-label="A wheel with one slice per map, sized by votes">
+    <circle r="${WHEEL_R + 12}" fill="#8f6339"/><circle r="${WHEEL_R + 7}" fill="#c08c58"/>
+    <g class="spinner">${parts}${pegs}</g>
+    <circle r="16" fill="#6b4728"/><circle r="9" fill="#c9a03d"/>
+    <g class="pointer" transform="translate(0 ${-(WHEEL_R + 4)})"><path d="M-12 -18 L12 -18 L0 10 Z" fill="#b24a3e" stroke="#4a3420" stroke-width="2" stroke-linejoin="round"/><circle cy="-18" r="5" fill="#4a3420"/></g>
+  </svg></div>`;
+}
+
+// The wheel's angle in turns at `ms` into DRAW: still while the voters drop
+// in, then TURNS full turns and the rest, easing out to stop at the drawn spot.
+function angleAt(ms: number, end: number): number {
+  const k = Math.min(1, Math.max(0, (ms - DRAW_INTRO_MS) / DRAW_SPIN_MS));
+  return (TURNS + end) * (1 - (1 - k) ** 4);
+}
+
+function spinDraw(card: HTMLElement, draw: Draw, elapsedAtArrival: number): void {
+  const spinner = card.querySelector<SVGGElement>(".spinner")!;
+  const pointer = card.querySelector<SVGGElement>(".pointer")!;
   const drawn = card.querySelector<HTMLElement>(".drawn")!;
-  const target = card.querySelector<HTMLElement>(`[data-layout="${card.dataset.result}"]`)!;
+  const sl = slices(draw);
+  const won = sl.find((s) => s.layout === draw.result)!;
+  // the pointer is at the top: the wheel turns so that this spot comes under it
+  const spot = won.from + draw.land * (won.to - won.from);
+  const end = 1 - spot;
+  const startedAt = performance.now() - Math.max(0, elapsedAtArrival);
   const land = (): void => {
-    target.classList.add("won");
-    drawn.textContent = `Map ${card.dataset.result}: ${levelById(Number(card.dataset.result)).name}`;
+    card.querySelector(`.slice[data-layout="${draw.result}"]`)?.classList.add("won");
+    card.classList.add("landed");
+    drawn.textContent = `Map ${draw.result}: ${levelById(draw.result).name}`;
+    chime();
   };
-  // where the marker stops: somewhere inside the drawn slice, not on its edge
-  const stopAt = (): number => {
-    const w = strip.clientWidth;
-    return (target.offsetLeft + target.offsetWidth * (0.3 + 0.4 * Math.random())) / w;
-  };
-  const spinMs = Math.max(0, leftMs - 1600);
-  if (reducedMotion.matches || spinMs < 300) {
-    needle.style.left = `${stopAt() * 100}%`;
+  // the voters drop in, one after another
+  if (!reducedMotion.matches) {
+    card.querySelectorAll<SVGGElement>(".voter").forEach((v, i) => setTimeout(plop, 120 + i * 140));
+  }
+  if (reducedMotion.matches) {
+    spinner.setAttribute("transform", `rotate(${(end * 360).toFixed(2)})`);
     land();
     return;
   }
-  const end = stopAt();
-  const sweeps = 4 + end; // back and forth across the strip, ending at `end`
-  const start = performance.now();
-  const step = (now: number): void => {
-    const k = Math.min(1, (now - start) / spinMs);
-    const d = sweeps * (1 - (1 - k) ** 3); // eases out
-    const pass = Math.floor(d), frac = d - pass;
-    needle.style.left = `${(pass % 2 === 0 ? frac : 1 - frac) * 100}%`;
-    for (const li of strip.children) {
-      const el = li as HTMLElement;
-      const at = parseFloat(needle.style.left) / 100 * strip.clientWidth;
-      el.classList.toggle("lit", at >= el.offsetLeft && at < el.offsetLeft + el.offsetWidth);
+  // which slice is under the pointer at an angle: for the peg ticks
+  const under = (a: number): number => {
+    const at = (((1 - (a % 1)) % 1) + 1) % 1;
+    return sl.findIndex((s) => at >= s.from && at < s.to);
+  };
+  let last = under(0);
+  let flick = 0;
+  const step = (): void => {
+    const ms = performance.now() - startedAt;
+    const a = angleAt(ms, end);
+    spinner.setAttribute("transform", `rotate(${(a * 360).toFixed(2)})`);
+    const now = under(a);
+    if (now !== last) {
+      last = now;
+      flick = 1;
+      tick(0.9 + 0.2 * Math.random());
     }
-    if (k < 1) requestAnimationFrame(step);
+    // the pointer kicks back on each peg, and settles
+    flick *= 0.82;
+    pointer.setAttribute("transform", `translate(0 ${-(WHEEL_R + 4)}) rotate(${(-22 * flick).toFixed(1)})`);
+    if (ms < DRAW_INTRO_MS + DRAW_SPIN_MS) requestAnimationFrame(step);
     else land();
   };
   requestAnimationFrame(step);
+}
+
+// the mute button, in the header
+export function muteButton(): void {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "copy mute";
+  const show = (): void => {
+    b.textContent = isMuted() ? "Sound off" : "Sound on";
+    b.setAttribute("aria-pressed", String(isMuted()));
+  };
+  b.addEventListener("click", () => {
+    setMuted(!isMuted());
+    show();
+  });
+  show();
+  el.where.parentElement!.append(b);
 }
 
 export function onVote(fn: (v: Vote) => void, onSeat: (character: number | null) => void): void {

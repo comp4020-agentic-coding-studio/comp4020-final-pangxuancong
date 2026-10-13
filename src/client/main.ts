@@ -9,7 +9,7 @@ import { MOVEMENT } from "../shared/movement.ts";
 import type { ClientToServer, ServerToClient } from "../shared/protocol.ts";
 import { LevelScene } from "./scene.ts";
 import { bus, emptySelection, iCanBuild, store } from "./state.ts";
-import { PIECES, buildTray, buttons, onVote, render, renderPhase, say, snapshotArrived } from "./ui.ts";
+import { PIECES, buildTray, buttons, muteButton, onVote, render, renderPhase, say, snapshotArrived } from "./ui.ts";
 
 // The room is in the URL: /r/CODE.
 const room = location.pathname.match(/^\/r\/([A-Za-z0-9]{4,8})\/?$/)?.[1]?.toUpperCase() ?? "";
@@ -77,7 +77,7 @@ new Phaser.Game({
   scene,
 });
 // for driving the game from browser tests during development only
-if (import.meta.env.DEV) Object.assign(window, { chainReaction: { scene, store } });
+if (import.meta.env.DEV) Object.assign(window, { chainReaction: { scene, store, bus } });
 scene.onReady = () => {
   sceneReady = true;
   scene.applySnapshot();
@@ -216,6 +216,7 @@ function skip(): void {
 }
 
 buildTray(choose);
+muteButton();
 onVote((v) => socket.emit("level:vote", v), (c) => (c === null ? socket.emit("seat:leave") : socket.emit("seat:claim", c)));
 buttons.rotate.addEventListener("click", rotate);
 buttons.cancel.addEventListener("click", cancel);

@@ -34,9 +34,14 @@ voting closes:
 
 - all under one sign: that course;
 - split: DRAW, a lot weighted by the votes (three for map 1 and one for map 2
-  is 75% and 25%), shown as a marker sweeping a strip of the maps, each as
-  wide as its votes. The server draws; every client animates to the same
-  result. Then BUILD.
+  is 75% and 25%), shown as a wheel with one slice per map, as large as its
+  votes (decided by the human, 2026-10-13: voters should feel part of it).
+  Each voter's head drops onto the rim of their slice, the wheel spins about
+  five turns and slows, the pointer flicking (and ticking) on each peg, and
+  stops on the drawn slice; the result chimes and holds before BUILD. The
+  server draws the map and where in its slice the wheel stops; the angle is
+  a function of the time into DRAW, so every screen shows the same wheel,
+  even one opened mid-spin. 7.5 s in all.
 
 Picks and the draw are ephemeral.
 

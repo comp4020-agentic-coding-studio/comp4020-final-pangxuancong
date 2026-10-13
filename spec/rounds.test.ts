@@ -281,7 +281,7 @@ it("draws a split vote by lot, weighted by the votes", () => {
   pick(s, "d", 2, 0);
   tick(s, 0);
   expect(tick(s, LOCK_MS, 0, () => 0.9)).toEqual({ to: "DRAW" });
-  expect(s.draw).toEqual({ options: [{ layout: 1, votes: 3 }, { layout: 2, votes: 1 }], result: 2 });
+  expect(s.draw).toEqual({ options: [{ layout: 1, votes: 3 }, { layout: 2, votes: 1 }], result: 2, land: 0.2 + 0.6 * 0.9 });
   expect(tick(s, LOCK_MS + DRAW_MS - 1)).toBeNull(); // the draw animation plays
   expect(tick(s, LOCK_MS + DRAW_MS)).toEqual({ to: "BUILD", newLevel: true, archive: false, layout: 2 });
 });

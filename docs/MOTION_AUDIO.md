@@ -31,5 +31,10 @@ movement and objects are the texture. If music is added later, keep it subtle.
 | Moving Platform | subtle mechanism, no constant motor |
 | Bomb | mechanical click → muffled pop → light wooden clatter ("remove this piece", not combat) |
 | Goal | short bell or chime, no score fanfare |
+| Map wheel | a soft drop as each voter lands, a wooden click per peg, a two-note chime on the result |
+
+Sounds are synthesised with Web Audio (`src/client/sound.ts`): no audio
+files. Nothing plays before a click or a key, and the room header has a
+"Sound on/off" button, remembered per browser.
 
 Any external audio asset needs a licence, recorded here.

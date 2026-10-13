@@ -386,28 +386,24 @@ button.link { margin-left: 0.4rem; padding: 0; border: 0; background: none; colo
 .seat-pick { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.15rem 0.45rem 0.15rem 0.2rem; font-size: 0.75rem; text-transform: none; letter-spacing: 0; }
 .aside .copy { margin-left: 0.2rem; padding: 0.05rem 0.45rem; font-size: 0.72rem; text-transform: none; letter-spacing: 0; }
 
-/* a split vote: the maps as a strip, each as wide as its votes */
-.card.draw { min-width: min(34rem, 94%); }
-.wheel { position: relative; margin: 0.9rem 0 0.4rem; padding-top: 0.9rem; }
-.slices { display: flex; list-style: none; margin: 0; padding: 0; border-radius: 10px; overflow: hidden; box-shadow: inset 0 0 0 1.5px rgba(107, 71, 40, 0.35); }
-.slices li {
-  display: grid;
-  gap: 0.05rem;
-  padding: 0.55rem 0.3rem;
-  background: #f1e5d1;
-  border-right: 1.5px dashed rgba(107, 71, 40, 0.35);
-  transition: background 120ms, transform 200ms;
-}
-.slices li:nth-child(2) { background: #e9dcc3; }
-.slices li:nth-child(3) { background: #f6ecda; }
-.slices li:last-child { border-right: 0; }
-.slices b { font: 500 1rem var(--serif); color: var(--ink); }
-.slices span { font-size: 0.74rem; color: var(--ink-soft); }
-.slices em { font: 700 0.95rem var(--serif); font-style: normal; color: var(--wood-deep); }
-.slices li.lit { background: #f7dfa8; }
-.slices li.won { background: #f3cf7e; box-shadow: inset 0 0 0 2px var(--brass); }
-.needle { position: absolute; top: 0; left: 0; width: 0; height: 0; margin-left: -9px; border: 9px solid transparent; border-top: 13px solid var(--red); border-bottom: 0; filter: drop-shadow(0 2px 1px rgba(43, 42, 40, 0.3)); }
-.drawn { min-height: 1.6em; font: 500 1.25rem var(--serif); color: var(--ink) !important; }
+/* a split vote: a wheel, one slice per map, sized by its votes */
+.card.draw { min-width: min(30rem, 94%); background: #fcf9f2; }
+.wheel { width: min(19rem, 70vw); margin: 0.3rem auto 0.2rem; }
+.wheel svg { display: block; width: 100%; height: auto; overflow: visible; filter: drop-shadow(0 8px 10px rgba(43, 42, 40, 0.25)); }
+.wheel .sl-n { font: 600 30px var(--serif); fill: #3d2a18; text-anchor: middle; }
+.wheel .sl-p { font: 700 13px var(--sans); fill: #4a3420; text-anchor: middle; opacity: 0.8; }
+.wheel .voter { transform-box: fill-box; transform-origin: center; animation: drop-in 420ms cubic-bezier(0.3, 1.6, 0.5, 1) var(--d) both; }
+@keyframes drop-in { 0% { opacity: 0; translate: 0 -40px; scale: 0.4; } 100% { opacity: 1; translate: 0 0; scale: 1; } }
+.wheel .slice { transition: opacity 400ms, filter 400ms; }
+.card.draw.landed .slice:not(.won) { opacity: 0.45; filter: saturate(0.5); }
+.card.draw.landed .slice.won { filter: brightness(1.08); }
+.odds { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.3rem 0.9rem; list-style: none; margin: 0.2rem 0 0; padding: 0; font-size: 0.82rem; color: var(--ink-soft); }
+.odds i { display: inline-block; width: 0.7rem; height: 0.7rem; margin-right: 0.3rem; border-radius: 3px; background: var(--c); vertical-align: -0.05rem; box-shadow: inset 0 0 0 1px rgba(107, 71, 40, 0.5); }
+.odds b { margin-left: 0.3rem; color: var(--ink); }
+.drawn { min-height: 1.6em; margin-top: 0.4rem !important; font: 600 1.4rem var(--serif); color: var(--wood-deep) !important; }
+.card.draw.landed .drawn { animation: drawn-pop 500ms cubic-bezier(0.3, 1.5, 0.5, 1) both; }
+@keyframes drawn-pop { 0% { transform: scale(0.7); opacity: 0; } 100% { transform: none; opacity: 1; } }
+.mute { margin-left: 0.4rem; }
 
 /* the lobby page: rooms */
 .lobby { max-width: 54rem; }
@@ -480,7 +476,8 @@ button.link { margin-left: 0.4rem; padding: 0; border: 0; background: none; colo
 }
 @media (prefers-reduced-motion: reduce) {
   .count { animation: none; }
-  .piece, .steps li, .board .row, .board .bar span, .card.round, .track .now, .track-row .gain, .hero, .rooms a, .slices li { transition: none; }
+  .piece, .steps li, .board .row, .board .bar span, .card.round, .track .now, .track-row .gain, .hero, .rooms a, .wheel .slice { transition: none; }
   .stamp { animation: none; opacity: 0; }
+  .wheel .voter, .card.draw.landed .drawn { animation: none; }
   .card.round.simple .body { animation: none; }
 }
