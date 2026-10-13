@@ -32,8 +32,8 @@ Design rules, detailed in `docs/`:
 
 ## Current state
 
-Playable build-and-run platformer, local only. Not deployed and not pushed:
-the live site and the pushed repo are still the crit 8 machine (tag `crit-8`).
+Playable build-and-run platformer, pushed and deployed to Fly on 2026-10-13
+(the crit 8 machine stays in Git history under tag `crit-8`).
 
 - Layout after the human's reference sheet: Parts Tray (left), the level in a
   wooden display box (middle), round panel with players, status and scores
@@ -68,8 +68,7 @@ the live site and the pushed repo are still the crit 8 machine (tag `crit-8`).
 - Persistent: levels (games), items (demolished kept as history), score
   events. Ephemeral: players, positions, statuses, previews, traces, votes.
 
-Not built yet: sound, most motion polish, activity logging. The two-stage
-Dockerfile has not been run (no Docker here).
+Not built yet: sound, most motion polish, activity logging.
 
 ## Still to do (human)
 
@@ -219,3 +218,14 @@ solo rounds on The Gaps scored +1 each with no stamp, and the game ended
 after round 4 ("Chicken reached 4 points in round 4"); the header has no
 README link (`/readme/` itself is still served, as the course requires); no
 console errors.
+
+2026-10-13, Fly: the platformer deployed. Locally, the image's two stages
+reproduced by hand (production install in a clean directory, built client,
+server TypeScript) served `/`, `/api/level` and `/readme/`, and `pnpm check`
+(41) passed against it. Pushed; CI built and checked the real image, then
+deployed. Against https://comp4020-final-pangxuancong.fly.dev: `pnpm check`
+(41, including invariants and the two-client realtime test) passed; two
+browser sessions chose a level, and A's placed spring showed on B's level
+and roster after 446 ms; no console errors. The test left a game in
+progress on the live site (Level 1, round 2). Not checked: real phones, a
+pod of four at once.
