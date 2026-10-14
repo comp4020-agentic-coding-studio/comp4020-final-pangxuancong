@@ -13,6 +13,12 @@ the app. You narrate from the logs who did what. Rehearse until it is easy.
      | sed -E 's/\x1b\[[0-9;]*m//g; s/ \{"ev".*//; s/^.*\[info\]//'
    ```
 
+   This shows the **live site** only. A room made at `localhost:8080` is on
+   your own machine: its log is in the `pnpm dev` terminal, never in
+   `flyctl logs` or on the live `/api/rooms/CODE/log` (a rehearsal on
+   2026-10-14 looked for a localhost room on the live site and found
+   "no such room").
+
 2. Give the two players only `https://comp4020-final-pangxuancong.fly.dev`.
    Nothing else: everything they need to get in has to be on the page.
 

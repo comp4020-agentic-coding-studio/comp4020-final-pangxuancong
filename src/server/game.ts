@@ -239,7 +239,7 @@ function createRoom(code: string): Room {
         if (was.character !== null) log(who, "seat:released", true, { reason: "not back within the seat hold" });
         continue;
       }
-      if (was.build === "WAITING" && p.build === "SKIPPED" && !t) log(who, "build:auto-skip", true, { reason: "idle" });
+      if (was.build === "WAITING" && p.build === "SKIPPED" && t?.to !== "BUILD") log(who, "build:auto-skip", true, { reason: "idle" });
       if (was.build === "WAITING" && p.build === "DISCONNECTED") log(who, "build:dropped", true, { reason: "connection lost past the grace" });
       if (was.run === "RUNNING" && p.run === "DEAD") log(who, "run:timeout", true, { reason: "did not move" });
       if (was.run === "RUNNING" && p.run === "DISCONNECTED") log(who, "run:dropped", true, { reason: "connection lost past the grace" });
