@@ -1,7 +1,7 @@
 # Process overview
 
 This is rewritten at each crit so it describes the project as it stands. This
-version is for crit 9 (all at once).
+version is for crit 10 (fly by instruments).
 
 ## From a machine to a platformer
 
@@ -87,23 +87,50 @@ sending them.
   ([`0d1a484`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-pangxuancong/commit/0d1a484)).
 - Deployed and checked live with two browsers
   ([`e707048`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-pangxuancong/commit/e707048)).
+- After crit 9 I decided the first problem was playing together and dropping
+  out. Sharing one URL could not limit a game to four or handle a dropped
+  connection, so the limit became four per room, not four per server: a lobby
+  of rooms, each with its own level, the four characters as seats, and a
+  dropped player keeping their seat and points
+  ([`c72f570`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-pangxuancong/commit/c72f570)).
+- My idea for choosing a map: pick a character and you are already playing;
+  walk under a map sign to vote; if the room splits, a draw weighted by votes
+  (3 to 1 is 75% to 25%). Then I asked for a spinning wheel, so the draw feels
+  like something everyone takes part in ([`4095012`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-pangxuancong/commit/4095012)).
+- Touch controls and level sounds ([`4996d3b`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-pangxuancong/commit/4996d3b)), and the same walk-and-wheel
+  vote for keeping the level after a game ([`98002ff`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-pangxuancong/commit/98002ff)).
+- The README in the shape of a reference I liked, then in my own voice
+  ([`fbe25b0`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-pangxuancong/commit/fbe25b0)).
 
 ## The decision for this crit
 
-`docs/decisions/0001-nobody-holds-the-round.md` records what happens when one
-player disconnects or goes idle: they are left behind, so the people who are
-present never wait long
-([`268ac0c`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-pangxuancong/commit/268ac0c)).
-I picked it because BUILD and RUN wait for everyone, which is exactly the
-interdependence the README asks for, and also exactly how one closed laptop
-could stop a crit pod.
+This crit asks that the app tell people apart, that the server decide what
+each person may change, and that the logs say who did what. Before deciding
+I asked the agent what game companies like Riot do and whether I needed
+something like Redis. I chose the simplest thing that works for one server:
+each event is a line on stdout, which `flyctl logs` shows live, and a row in
+SQLite on the `/data` volume, which outlives the crit ([`f87008f`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-pangxuancong/commit/f87008f)).
 
-I expect the pod to argue for waiting, or for pausing until the missing
-player comes back, because leaving someone behind takes their turn away. My
-answer is that at a crit, or with friends on their phones, someone dropping
-out is normal, and a game that stops for one person stops for everyone. The
-absent player's pieces still stay in the level, so they still shape the
-round even when they are not there.
+How people are named was my choice too. Out of the options I picked
+`Character#tag`, like a Riot ID: the character is what you play, the tag is a
+short hash of a secret id that never leaves the server, and the tag is shown
+in the player list so people can find themselves in the log.
+
+`docs/decisions/0003-who-may-change-what.md` records who may change what
+([`3ba894c`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-pangxuancong/commit/3ba894c)). The Demolition Bomb may remove anyone's piece. Chain Reaction
+is a party game between friends, and that gives friends more ways to play
+with and against each other. If my piece is bombed, that is fine, because my
+friend gave up placing their own piece to do it. I expect the pod to argue
+for protecting a new piece for a round, but if someone places a piece that
+blocks the path, we would lose two rounds getting rid of it. A run's result
+is reported by the browser and not checked; between friends that is not
+worth the cost.
+
+The earlier decisions still stand:
+`docs/decisions/0001-nobody-holds-the-round.md` (a player who drops or idles
+is left behind, so the others never wait long) and
+`docs/decisions/0002-rooms-and-seats.md` (rooms of four, a character is a
+seat, a dropped seat is held for two minutes).
 
 ## Directing, grounding and correcting the work
 
@@ -135,6 +162,15 @@ commit as the code, so the next session does not build against an old rule.
   whenever everyone finished, which included a player alone. It now needs two
   or more runners, and a spec covers solo scoring
   ([`6b5236c`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-pangxuancong/commit/6b5236c)).
+- *The wheel did not spin.* I reported it twice. The first time, my Windows
+  setting for animations was off, which the browser reports as "reduce
+  motion", and the code skipped straight to the result; there is now a
+  Motion switch and the wheel still turns gently. The second time my own dev
+  server was running old code, which made the angle NaN. Now the page warns
+  when it and the server are on different versions, and the lesson is in
+  `docs/TESTING.md` {c("14e9c4d")}.
+- *Empty rooms stayed in the lobby.* I noticed it while testing; empty rooms
+  now leave the list after two minutes {c("fbe25b0")}.
 - *Tests must not touch the server I am playing on.* The agent runs its checks
   against a throwaway server on another port.
 - *Claims must be checked.* A draft of the ADR said reconnecting from a second
@@ -148,6 +184,7 @@ what I guessed the fix was, is what got to the cause.
 
 ## What comes next
 
-Playtesting with the pod: whether the idle limits in the ADR are right,
-whether the Launcher and "too simple" make people build differently, and how
-the game feels with four people on their own devices.
+Rehearsing the crit several times: two people open the URL in separate
+browsers while I only read `flyctl logs` and say who did what. Then
+playtesting with the pod: whether people bomb more than they build, and
+whether the logs tell me enough when something goes wrong.
