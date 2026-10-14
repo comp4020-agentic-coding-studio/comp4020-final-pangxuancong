@@ -1,9 +1,7 @@
 # 3. Who may change what: the Bomb removes anyone's piece, and the server decides
 
-<!-- Draft for crit 10, 2026-10-14. The decision is mine (the Bomb may remove
-     anyone's piece; log names as Character#tag); what the server checks and
-     the numbers are checked against the code. Rewrite the reasoning in your
-     own words: the pod will argue for an option I did not pick. -->
+<!-- Reasons from the human's own answers (2026-10-14); the table, tags and
+     tests are checked against the code. -->
 
 - Status: accepted (the rule since the first playable build, 2026-10-06;
   written down and logged 2026-10-14)
@@ -27,14 +25,13 @@ the Bomb is a rule about that.
 
 ## Options considered
 
-1. **The Bomb removes only your own pieces.** Nobody can undo your work, so
-   your piece is really yours. But a level that someone has blocked off can
-   only be opened by the person who blocked it, and a player who leaves
-   leaves their pieces in everyone's way for good.
-2. **A new piece is protected for one round.** You get to see your piece
-   used at least once before anyone can remove it. But it adds a rule players
-   have to remember, and a blocking piece placed in the last round of a game
-   cannot be answered at all.
+1. **The Bomb removes only your own pieces.** Nobody can undo your work. But
+   then the Bomb is only an undo button, and if someone blocks the path, only
+   they can open it again.
+2. **A new piece is protected for one round.** You see your piece used at
+   least once before anyone can remove it. But if someone places a piece that
+   blocks the path, we lose two rounds: one where nobody can remove it, and
+   one spent removing it.
 3. **The Bomb removes anyone's piece (chosen).** Any seated player, with their
    build action unused this round, may remove any piece a player placed,
    whoever placed it. It can never remove the course itself: its blocks and
@@ -42,10 +39,16 @@ the Bomb is a rule about that.
 
 ## Decision
 
-Option 3. The Bomb is how a level that has become impossible becomes possible
-again, and that only works if anyone can use it on anything a player placed.
-It costs the person their whole build action for the round, so removing
-someone's piece means not adding one of your own.
+Option 3. Chain Reaction is a party game played with friends, and letting
+anyone remove anyone's piece makes it more flexible and gives friends more
+ways to play with and against each other. If my piece gets bombed, that is
+fine: my friend gave up placing something of their own to do it. The Bomb
+costs the whole build action for the round.
+
+What each person may see: everything, the same for everyone. Every player and
+watcher sees the whole level, every piece and who placed it, the pieces others
+are still deciding on, and everyone's runs. There is nothing hidden; the
+README says why: you see other people through what the level is doing.
 
 What the server checks, for every action (the browser's view is never
 trusted):
@@ -84,9 +87,9 @@ Gains:
 
 Costs, and who pays them:
 
-- **Your work can be removed the round after you place it.** A player who
-  built something careful can watch it go. That is the point of the rule, but
-  it can feel bad, and the person who placed it pays.
+- **Your work can be removed the round after you place it.** The person who
+  placed it pays. I think that is fine between friends, because whoever
+  bombed it paid too: they did not get to add a piece that round.
 - **Removing is as strong as adding.** One Bomb undoes one piece, so a player
   who only ever bombs can keep a level from growing. Whether that happens is
   for playtesting.
@@ -98,11 +101,10 @@ Costs, and who pays them:
 
 A browser reports its own run: the server checks only that the player was
 still running and reports once. It does not simulate the run, so a modified
-browser could report reaching the flag without doing it. `CLAUDE.md` rules
-out anti-cheat: this is a game for a few friends in one room, and simulating
-every run on the server would cost the instant response the movement depends
-on. The log still records each report, so a suspicious finish is visible
-(`run:finished` with no time in between).
+browser could report reaching the flag without doing it. I don't think that
+needs fixing: this is a party game between friends, not a competitive game
+with strangers. The log still records each report, so a suspicious finish is
+visible (`run:finished` with no time in between).
 
 ## How it is checked
 
