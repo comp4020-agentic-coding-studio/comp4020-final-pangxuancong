@@ -96,8 +96,13 @@ export function createRooms(io: IO): {
     },
     exists,
     levelState: (code) => (exists(code) ? open(code).levelState() : null),
-    // the activity log: names are public tags, so it is safe to show
-    log: (code, limit) => (exists(code) ? readEvents(code, limit) : null),
+    // the activity log: names are public tags, so it is safe to show. It
+    // outlives the room: a room made but never played is gone after a restart,
+    // but what happened in it can still be read
+    log: (code, limit) => {
+      const events = readEvents(code, limit);
+      return events.length || exists(code) ? events : null;
+    },
   };
 }
 
