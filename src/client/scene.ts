@@ -784,7 +784,7 @@ export class LevelScene extends Phaser.Scene {
     drawCharacter(figure, character, 1);
     // a small marker so you can find yourself among several
     const you = this.add.triangle(0, -64, 0, 0, 10, 0, 5, 7, colour).setOrigin(0.5);
-    const label = this.add.text(0, -75, "You", { fontFamily: "system-ui, sans-serif", fontSize: "11px", fontStyle: "bold", color: "#4a4640" }).setOrigin(0.5);
+    const label = this.add.text(0, -75, `You #${store.me}`, { fontFamily: "system-ui, sans-serif", fontSize: "11px", fontStyle: "bold", color: "#4a4640" }).setOrigin(0.5);
     const view = this.add.container(x, y, [figure, you, label]).setDepth(15);
     this.local = { rect, view, figure, colour, character, facing: 1, lastDustAt: 0, fallSpeed: 0, lastWallTouchAt: null, lastWallSide: 1, wasOnGround: false, live, lastPoseAt: 0, flung: null };
     this.physics.add.collider(rect, this.solids);
@@ -807,7 +807,7 @@ export class LevelScene extends Phaser.Scene {
     const figure = this.add.graphics().setScale(FIGURE_SCALE);
     drawCharacter(figure, character, 1);
     const name = store.snap?.players.find((p) => p.id === id)?.name ?? "";
-    const label = this.add.text(0, -64, name, { fontFamily: "system-ui, sans-serif", fontSize: "11px", color: "#6a655d" }).setOrigin(0.5);
+    const label = this.add.text(0, -64, `${name} #${id}`, { fontFamily: "system-ui, sans-serif", fontSize: "11px", color: "#6a655d" }).setOrigin(0.5);
     const view = this.add.container(0, 0, [figure, label]).setDepth(12).setAlpha(0.92);
     r = { view, figure, colour, character, lastVy: 0, lastDustAt: 0, facing: 1, samples: [], gone: false };
     this.remotes.set(id, r);
@@ -1065,7 +1065,7 @@ export class LevelScene extends Phaser.Scene {
       this.hoverInfo = `${NAMES[item.type]}: part of ${this.course.name}. It cannot be demolished.`;
       return;
     }
-    this.hoverInfo = item ? `${NAMES[item.type]} placed by ${item.createdBy}${item.createdRound ? ` in round ${item.createdRound}` : " in an earlier game"}.` : "";
+    this.hoverInfo = item ? `${NAMES[item.type]} placed by ${item.createdBy}${item.createdById ? ` #${item.createdById}` : ""}${item.createdRound ? ` in round ${item.createdRound}` : " in an earlier game"}.` : "";
   }
 
   private pointerDown(x: number, y: number): void {

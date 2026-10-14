@@ -292,6 +292,7 @@ button.danger { background: var(--red); border-color: var(--red); }
 .roster .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .roster .me .name { font-weight: 700; }
 .roster .pts { font-variant-numeric: tabular-nums; font-weight: 600; font-size: 0.85rem; }
+.roster .tag { margin-left: 0.25rem; font: 600 0.72rem ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink-soft); letter-spacing: 0.02em; }
 .roster .state { grid-column: 2 / 4; font-size: 0.78rem; color: var(--ink-soft); display: flex; align-items: center; gap: 0.3rem; }
 .roster .state.ok::before { content: "✓"; color: var(--green); font-weight: 700; }
 .roster .state.wait::before { content: "○"; }

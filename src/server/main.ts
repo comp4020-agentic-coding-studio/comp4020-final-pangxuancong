@@ -65,6 +65,18 @@ app.get("/readme/", (req, res) => {
 // relative image links in README.md resolve here, as they do on GitHub
 app.use("/readme/docs", express.static("docs"));
 
+// A room's activity log, newest last: who did what, refusals included. It
+// names people by their public tag only (src/server/identity.ts).
+app.get("/api/rooms/:code/log", (req, res) => {
+  const limit = Math.min(1000, Math.max(1, Number(req.query.limit) || 200));
+  const log = isRoomCode(req.params.code) ? rooms.log(req.params.code, limit) : null;
+  if (!log) {
+    res.status(404).json({ error: "no such room" });
+    return;
+  }
+  res.json({ events: log });
+});
+
 // The game client is built by Vite. In development Vite serves it from source
 // through this same server, so `pnpm dev` is still one process on one port.
 // Two pages: the lobby at / and a room at /r/CODE (the game, which reads the

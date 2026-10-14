@@ -8,10 +8,10 @@ import type { BuildState, Draw, Phase, RunState } from "./rounds.ts";
 // server that disagree say so on screen, instead of misreading each other
 // (a dev server that missed a restart once froze the map wheel: a field it
 // did not send yet became NaN).
-export const PROTOCOL = 4;
+export const PROTOCOL = 5;
 
 export interface PlayerView {
-  id: string;
+  id: string; // the public tag, as in "Chicken#3fa9"
   name: string;
   colour: string;
   connected: boolean;
@@ -29,6 +29,10 @@ export interface ScoreRow { playerId: string; name: string; colour: string; char
 
 export interface Snapshot {
   protocol: number; // PROTOCOL on the server that sent it
+  // Players are named by public tags everywhere in a snapshot (ids, item
+  // owners, scores, previews, poses), never by the secret playerId a
+  // browser keeps. `you` is the receiver's own tag.
+  you: string;
   room: string; // its code, as in /r/ABCD
   draw: Draw | null; // DRAW: the maps in the draw, their votes, and the result
   // SELECT/DRAW after a game: the KEEP sign is up; `layout`, `items` and

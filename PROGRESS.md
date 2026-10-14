@@ -2,9 +2,10 @@
 
 ## Current milestone
 
-Crit 09: all at once. Cutoff Wed 2026-10-14 12:00. Shipped and deployed
-2026-10-13 (`eb0bb85`). Work after that (rooms, below) is committed locally
-and not pushed, by the human's instruction.
+Crit 10: fly by instruments. Cutoff Wed 2026-10-21 12:00
+(`reflections/crit-10.md`). Rooms, the wheel, touch and sound are deployed.
+The activity log, public tags and ADR 0003 (2026-10-14) are committed
+locally; pushing waits for the human.
 
 ## Product direction
 
@@ -84,16 +85,21 @@ Playable build-and-run platformer, pushed and deployed to Fly on 2026-10-13
 - Persistent: levels (games), items (demolished kept as history), score
   events. Ephemeral: players, positions, statuses, previews, traces, picks.
 
-Not built yet: activity logging; the fan and moving-platform sounds.
+- Activity log (2026-10-14): every action allowed or refused, with the
+  reason, and every server decision, as a line on stdout (`flyctl logs`) and
+  a row in SQLite `event_log`; `GET /api/rooms/:code/log`. People appear as
+  `Character#tag`; the `playerId` never leaves the server, and the tag shows
+  in the player list. Who may change what: `docs/decisions/0003-who-may-change-what.md`
+  (a draft for the human to rewrite).
+
+Not built yet: the fan and moving-platform sounds.
 
 ## Still to do (human)
 
-- Crit 8, before the cutoff: `README.md`, `PROCESS.md`,
-  `reflections/crit-8.md`, deploy and ship, as planned.
-- After the cutoff: rewrite `README.md` for the platformer (the current one
-  argues for the fixed machine). `PROCESS.md` still points to
-  `docs/PRODUCT_RULES.md`, which this pivot removed (it remains in Git
-  history); how to describe the pivot there is yours to decide.
+- Crit 10, before 2026-10-21 12:00: rewrite ADR 0003 in your own words
+  (the pod will argue for an option it did not pick); `PROCESS.md` for this
+  crit and `reflections/crit-10.md`, from your own experience.
+- Approve the push, so the log can be read live with `flyctl logs`.
 
 ## Next milestones
 
@@ -112,7 +118,8 @@ Not built yet: activity logging; the fan and moving-platform sounds.
 4. Human playtest; tune movement, fan strength, the base course and whether
    +0.2 per kill crowds out helping.
 5. Motion and sound (F18), reconnect robustness.
-6. Server-side activity logging (F19).
+6. ~~Server-side activity logging (F19), tags, ADR 0003~~ 2026-10-14 (local).
+   Deploy, then read `flyctl logs` live.
 7. Before deploying: run the Docker build (CI or locally).
 
 ## Known constraints

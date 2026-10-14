@@ -13,6 +13,8 @@ import type { ScoreEvent } from "../shared/score.ts";
 const dataDir = process.env.DATA_DIR ?? "data";
 mkdirSync(dataDir, { recursive: true });
 const db = new DatabaseSync(join(dataDir, "chain-reaction.db"));
+// readers (a check, `sqlite3` over ssh) never wait for the game's writes
+db.exec("PRAGMA journal_mode = WAL");
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS level (
@@ -37,6 +39,22 @@ db.exec(`
     destroyed_round INTEGER,
     destroyed_at TEXT
   );
+  -- who did what: every action a player asked for, allowed or refused, and
+  -- what the server did on its own (phases, timeouts). Append only; read with
+  -- the activity log tools (docs/ARCHITECTURE.md, "Activity log")
+  CREATE TABLE IF NOT EXISTS event_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at TEXT NOT NULL,
+    room TEXT NOT NULL,
+    level_id INTEGER,
+    round INTEGER,
+    phase TEXT,
+    who TEXT, -- "Chicken#3fa9", "Visitor#81c2", or null for the server
+    action TEXT NOT NULL,
+    ok INTEGER NOT NULL, -- 1 done, 0 refused
+    detail TEXT -- JSON: target, reason, position...
+  );
+  CREATE INDEX IF NOT EXISTS event_log_room ON event_log(room, id);
   CREATE TABLE IF NOT EXISTS score_event (
     level_id INTEGER NOT NULL REFERENCES level(id),
     round INTEGER NOT NULL,
@@ -131,4 +149,20 @@ export function voidRoundScores(levelId: number, round: number): void {
 
 export function destroyItem(id: string, by: string, round: number): void {
   db.prepare("UPDATE placed_item SET destroyed_by = ?, destroyed_round = ?, destroyed_at = ? WHERE id = ?").run(by, round, now(), id);
+}
+
+export interface LogEvent { at: string; room: string; levelId: number | null; round: number | null; phase: string | null; who: string | null; action: string; ok: boolean; detail: Record<string, unknown> }
+
+export function insertEvent(e: LogEvent): void {
+  db.prepare("INSERT INTO event_log (at, room, level_id, round, phase, who, action, ok, detail) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(
+    e.at, e.room, e.levelId, e.round, e.phase, e.who, e.action, e.ok ? 1 : 0, JSON.stringify(e.detail),
+  );
+}
+
+// the latest events, newest last, for /api/rooms/:code/log and checks
+export function readEvents(room: string, limit = 200): LogEvent[] {
+  const rows = db
+    .prepare("SELECT at, room, level_id AS levelId, round, phase, who, action, ok, detail FROM event_log WHERE room = ? ORDER BY id DESC LIMIT ?")
+    .all(room, limit) as unknown as (Omit<LogEvent, "ok" | "detail"> & { ok: number; detail: string })[];
+  return rows.reverse().map((r) => ({ ...r, ok: r.ok === 1, detail: JSON.parse(r.detail) as Record<string, unknown> }));
 }

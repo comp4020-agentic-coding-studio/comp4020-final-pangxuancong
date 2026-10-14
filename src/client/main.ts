@@ -36,7 +36,6 @@ if (!saved) {
   if (last && Date.now() - openAt > 4000) saved = last;
 }
 const playerId = saved?.id ?? crypto.randomUUID();
-store.me = playerId;
 const remember = (name: string): void => {
   try {
     const v = JSON.stringify({ id: playerId, name });
@@ -96,8 +95,10 @@ socket.on("snapshot", (snap) => {
   }
   const before = store.snap;
   store.snap = snap;
+  // the server names me by my public tag, never by my own id
+  store.me = snap.you;
   snapshotArrived();
-  const me = snap.players.find((p) => p.id === playerId);
+  const me = snap.players.find((p) => p.id === snap.you);
   if (me && saved?.name !== me.name) {
     saved = { id: playerId, name: me.name };
     remember(me.name);

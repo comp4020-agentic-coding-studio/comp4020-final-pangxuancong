@@ -117,6 +117,7 @@ level(id, room, round, layout, parent_id, outcome, finished_at, created_at, upda
 placed_item(id, level_id, type, col, row, rot, created_by, created_by_id,
             created_round, created_at, destroyed_by, destroyed_round, destroyed_at)
 score_event(level_id, round, player_id, name, kind, created_at)
+event_log(id, at, room, level_id, round, phase, who, action, ok, detail)
 ```
 
 Each room has its own chain of levels (`room` is its code; games from before
@@ -137,6 +138,30 @@ alive/dead state, build previews, socket ids, the current roster and seats,
 held seats, map picks and the draw, selections, interpolation state,
 last-run death traces. After a server restart each room's level reloads and
 the room returns to BUILD; players take their characters again.
+
+## Activity log
+
+Every action a player asks for, allowed or refused (with the reason), and
+everything the server decides on its own (phase changes, auto-skip, run
+timeouts, a dropped player, a released seat) is one event
+(`src/server/log.ts`, decided 2026-10-14). Each event goes two places:
+
+- one line on stdout, readable first and JSON after it, so
+  `flyctl logs -a comp4020-final-pangxuancong` can be read live:
+  `[BZPR r1 BUILD] Big Dog#2a39 build:bomb (own=false) {"ev":{...}}`;
+- one row in `event_log` on the `/data` volume, append only, which outlives
+  the process. `GET /api/rooms/:code/log?limit=N` returns a room's newest
+  events (WAL mode, so reading never blocks the game).
+
+No Redis or log service: one machine, one SQLite file. A failed log write is
+reported and never stops the game.
+
+People in the log are `Character#tag`, never the `playerId`
+(`src/server/identity.ts`). The `playerId` is a secret: whoever presents it
+takes that seat. So no snapshot, API or log carries it; they carry the tag, a
+salted SHA-256 of the id cut to 4 hex digits, shown beside each name in the
+player list. A snapshot's `you` is the receiver's own tag. Who may do what is
+`docs/decisions/0003-who-may-change-what.md`.
 
 ## Build validation
 

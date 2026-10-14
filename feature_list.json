@@ -23,7 +23,7 @@
     { "id": "F16", "name": "Moving Platform item", "status": "verified", "priority": "gameplay" },
     { "id": "F17", "name": "Previous-round death traces", "status": "verified", "priority": "polish" },
     { "id": "F18", "name": "Tactile animation and sound", "status": "implemented", "priority": "polish" },
-    { "id": "F19", "name": "Server-side activity logging", "status": "planned", "priority": "later-crit" },
+    { "id": "F19", "name": "Server-side activity log: every action allowed or refused, and server decisions, to stdout (flyctl logs) and SQLite event_log; /api/rooms/:code/log", "status": "verified", "priority": "later-crit" },
     { "id": "F20", "name": "Scores within a game (+1 flag, +0.2 per other player spiked)", "status": "verified", "priority": "core" },
     { "id": "F21", "name": "Six-round game end: final scores, archive-or-restart vote", "status": "verified", "priority": "core" },
     { "id": "F22", "name": "Four-player seats, spectators rotate in", "status": "verified", "priority": "core" },
@@ -41,6 +41,8 @@
     { "id": "F34", "name": "Seats are the four characters; a dropped connection keeps seat and points for 2 min and holds the round 8 s at most", "status": "verified", "priority": "multiplayer" },
     { "id": "F35", "name": "Walkable lobby: stand under a map sign to vote; a split vote spins a wheel sized by votes, same on every screen", "status": "verified", "priority": "gameplay" },
     { "id": "F36", "name": "Touch controls: run and jump buttons on touch screens; phone layout with floating cards", "status": "verified", "priority": "multiplayer" },
-    { "id": "F37", "name": "Motion switch (system setting by default); the map wheel turns gently under reduced motion", "status": "verified", "priority": "polish" }
+    { "id": "F37", "name": "Motion switch (system setting by default); the map wheel turns gently under reduced motion", "status": "verified", "priority": "polish" },
+    { "id": "F38", "name": "Public tags (Character#tag): playerId never leaves the server; tag shown in the player list", "status": "verified", "priority": "multiplayer" },
+    { "id": "F39", "name": "Server checks who may change what (ADR 0003): one action a round, seated only, Bomb on any player piece, never the course", "status": "verified", "priority": "multiplayer" }
   ]
 }

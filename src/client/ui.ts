@@ -173,7 +173,7 @@ export function render(): void {
   el.roster.innerHTML = players
     .map((p) => {
       const s = status(p, snap);
-      return `<li class="${p.id === store.me ? "me" : ""} ${p.active || (choosing && p.character !== null) ? "" : "watching"}">${head(p.character, p.colour)}<span class="name">${escape(p.name)}${p.id === store.me ? " (you)" : ""}</span><span class="pts" title="points this game">${pts(p.points)}</span><span class="state ${s.cls}">${s.text}</span></li>`;
+      return `<li class="${p.id === store.me ? "me" : ""} ${p.active || (choosing && p.character !== null) ? "" : "watching"}">${head(p.character, p.colour)}<span class="name">${escape(p.name)}<small class="tag" title="how you appear in the room's log">#${p.id}</small>${p.id === store.me ? " (you)" : ""}</span><span class="pts" title="points this game">${pts(p.points)}</span><span class="state ${s.cls}">${s.text}</span></li>`;
     })
     .join("");
 

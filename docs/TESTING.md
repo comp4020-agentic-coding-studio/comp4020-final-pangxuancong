@@ -46,6 +46,7 @@ also a player, and holds BUILD until they act or the AFK limit passes.
 | S9 | four characters are four seats; a fifth person watches; a seat is taken only by choosing a free character, plays at once in an open BUILD | small rooms (P10) | `spec/rounds.test.ts`; four seats and a watcher over sockets in `spec/realtime.test.ts` |
 | S12 | a dropped player holds BUILD and RUN only for the reconnect grace; keeps seat, character and place for the seat hold; back in BUILD, still builds | nobody holds the round, nobody loses their seat to a blip | `spec/rounds.test.ts`; over sockets in `spec/realtime.test.ts` |
 | S13 | rooms are apart (seats, players); a room that never existed is refused; the lobby lists rooms with seats and watchers | rooms | `spec/realtime.test.ts` |
+| S14 | over sockets: a second build, a watcher's placement and a bomb on START are refused; a bomb removes another player's piece; each is in `/api/rooms/:code/log` as `Character#tag` with the reason; no `playerId` in any snapshot, the level API or the log API | the server decides who may change what (ADR 0003) | `spec/realtime.test.ts`; stdout and SQLite rows matched, and tags in the browser checked by hand (2026-10-14) |
 | — | wall jump allowed while touching and within the grace window; kicks away, mostly up when pressing in | forgiving movement (P6) | `spec/level.test.ts` |
 
 S3, S4, S7–S9 test the pure round state machine and scoring with explicit times.

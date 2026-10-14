@@ -16,7 +16,7 @@ export interface Selection {
 export const emptySelection = (): Selection => ({ choice: null, rot: 0, hover: null, pinned: null, hoverTarget: null, target: null });
 
 export const store = {
-  me: "",
+  me: "", // my public tag (snapshot.you); my own playerId stays in main.ts
   snap: null as Snapshot | null,
   sel: emptySelection(),
   previews: new Map<string, PreviewView>(),

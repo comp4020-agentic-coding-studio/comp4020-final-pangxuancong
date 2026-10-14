@@ -12,6 +12,13 @@ open in the same room at the same time is someone new (a heartbeat in
 localStorage tells them apart). A player's name is their character; without
 one they are a Visitor. Collect nothing personal.
 
+The `playerId` never leaves the server: anyone holding it is that player.
+Other browsers, the APIs and the activity log see a public tag, a hash of it
+(`Chicken#3fa9`, `src/server/identity.ts`), shown in the player list; a
+snapshot's `you` tells a browser its own tag. The server checks every build
+action, vote and run report, and logs each one, allowed or refused
+(`docs/ARCHITECTURE.md`, "Activity log"; `docs/decisions/0003-who-may-change-what.md`).
+
 ## Rooms
 
 A room is a code and a URL, `/r/CODE`. The lobby at `/` lists rooms with
