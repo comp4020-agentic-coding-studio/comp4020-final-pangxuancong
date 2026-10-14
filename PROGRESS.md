@@ -4,8 +4,8 @@
 
 Crit 10: fly by instruments. Cutoff Wed 2026-10-21 12:00
 (`reflections/crit-10.md`). Rooms, the wheel, touch and sound are deployed.
-The activity log, public tags and ADR 0003 (2026-10-14) are committed
-locally; pushing waits for the human.
+The activity log, public tags and ADR 0003 are deployed and read live
+with `flyctl logs` (2026-10-14).
 
 ## Product direction
 
@@ -96,10 +96,10 @@ Not built yet: the fan and moving-platform sounds.
 
 ## Still to do (human)
 
-- Crit 10, before 2026-10-21 12:00: rewrite ADR 0003 in your own words
-  (the pod will argue for an option it did not pick); `PROCESS.md` for this
-  crit and `reflections/crit-10.md`, from your own experience.
-- Approve the push, so the log can be read live with `flyctl logs`.
+- Crit 10, before 2026-10-21 12:00: the ADR 0003 reasons, `PROCESS.md` and
+  `reflections/crit-10.md` are written from your answers and pushed; read
+  them once more. Rehearse on the live URL with `docs/CRIT10_REHEARSAL.md`,
+  with two people if you can.
 
 ## Next milestones
 
@@ -118,8 +118,7 @@ Not built yet: the fan and moving-platform sounds.
 4. Human playtest; tune movement, fan strength, the base course and whether
    +0.2 per kill crowds out helping.
 5. Motion and sound (F18), reconnect robustness.
-6. ~~Server-side activity logging (F19), tags, ADR 0003~~ 2026-10-14 (local).
-   Deploy, then read `flyctl logs` live.
+6. ~~Server-side activity logging (F19), tags, ADR 0003~~ 2026-10-14, deployed.
 7. Before deploying: run the Docker build (CI or locally).
 
 ## Known constraints
