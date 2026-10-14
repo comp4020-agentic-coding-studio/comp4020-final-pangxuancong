@@ -5,7 +5,7 @@ import { type Item, demolitionError, placementError } from "../shared/level.ts";
 import { levelById } from "../shared/levels.ts";
 import { type ClientToServer, type Handshake, PROTOCOL, type PlayerView, type ServerToClient, type Snapshot } from "../shared/protocol.ts";
 import {
-  BUILD_IDLE_MS, BUILD_MAX_MS, MAX_PLAYERS, MAX_ROUNDS, type Player, type RoundState, WIN_POINTS,
+  BUILD_IDLE_MS, BUILD_MAX_MS, MAX_PLAYERS, MAX_ROUNDS, type Player, type RoundState, SEAT_HOLD_MS, WIN_POINTS,
   act, canBuild, claim, join, leave, moved, newRoundState, pick, report, runComplete, tick, tooSimple, touchBuild, unclaim,
 } from "../shared/rounds.ts";
 import { type ScoreEvent, killCredit, tally } from "../shared/score.ts";
@@ -25,8 +25,14 @@ type IO = Server<ClientToServer, ServerToClient>;
 // words; no 0/O or 1/I to misread.
 const CODE_CHARS = "BCDFGHJKLMNPQRSTVWXZ23456789";
 export const isRoomCode = (v: unknown): v is string => typeof v === "string" && /^[A-Z0-9]{4,8}$/.test(v);
-// a room nobody has been in for this long leaves the lobby list (its level stays)
-const LISTED_MS = 30 * 60_000;
+// An empty room leaves the lobby list after this: as long as a dropped
+// player's seat is held, so they can still find their way back. Its link
+// keeps working and its level stays (docs/MULTIPLAYER.md).
+// (ROOM_LISTED_MS shortens both, for checking it without waiting.)
+const short = Number(process.env.ROOM_LISTED_MS) || 0;
+export const LISTED_MS = short || SEAT_HOLD_MS;
+// a room made but never entered, after this
+export const UNVISITED_MS = short ? short / 2 : 60_000;
 // and is dropped from memory after this, once empty
 const FORGET_MS = 60 * 60_000;
 
@@ -45,8 +51,10 @@ export function createRooms(io: IO): {
     return r;
   };
   const exists = (code: string): boolean => rooms.has(code) || roomExists(code);
-  // games in play before a restart are listed again, with their level as it was
-  for (const code of roomsInPlay()) if (isRoomCode(code)) open(code);
+  // Rooms with a game in play before a restart are opened again, level as it
+  // was, but not listed until someone comes back: a restart must not fill
+  // the lobby with rooms nobody is in.
+  for (const code of roomsInPlay()) if (isRoomCode(code)) open(code).unlist();
 
   // forget rooms long empty, so a long-running server does not hold them all
   setInterval(() => {
@@ -72,7 +80,7 @@ export function createRooms(io: IO): {
     list: () => {
       const now = Date.now();
       return [...rooms.values()]
-        .filter((r) => r.sockets.size > 0 || now - r.lastSeenAt() < LISTED_MS)
+        .filter((r) => r.listed(now))
         .map((r) => r.summary())
         .sort((a, b) => b.here - a.here || a.code.localeCompare(b.code));
     },
@@ -94,6 +102,8 @@ interface Room {
   summary: () => RoomSummary;
   levelState: () => { levelId: number; layout: number; round: number; items: Item[] };
   lastSeenAt: () => number;
+  listed: (now: number) => boolean;
+  unlist: () => void;
   stop: () => void;
 }
 
@@ -107,6 +117,8 @@ const colourOf = (p: Player | undefined): string => (p?.character == null ? SPEC
 function createRoom(code: string): Room {
   const sockets = new Set<GameSocket>();
   let lastSeen = Date.now();
+  let visited = false; // anyone has connected since it was made (or reopened)
+  let hidden = false; // reopened after a restart, nobody back yet
   // a game in progress resumes in BUILD; with none, players choose a level
   let level: LevelRow | null = currentLevel(code);
   let items = level ? readItems(level.id) : [];
@@ -242,6 +254,8 @@ function createRoom(code: string): Room {
     }
     sockets.add(socket);
     lastSeen = Date.now();
+    visited = true;
+    hidden = false;
     join(state, id, SPECTATOR.name, Date.now());
     broadcast();
     const me = (): Player | undefined => state.players.find((p) => p.id === id);
@@ -355,6 +369,11 @@ function createRoom(code: string): Room {
     }),
     levelState: () => ({ levelId: level?.id ?? 0, layout: level?.layout ?? 1, round: state.round, items }),
     lastSeenAt: () => (sockets.size > 0 ? Date.now() : lastSeen),
+    // in the lobby while someone is in it, and for a short while after
+    listed: (now) => sockets.size > 0 || (!hidden && now - lastSeen < (visited ? LISTED_MS : UNVISITED_MS)),
+    unlist: () => {
+      hidden = true;
+    },
     stop: () => clearInterval(timer),
   };
 }

@@ -15,8 +15,13 @@ one they are a Visitor. Collect nothing personal.
 ## Rooms
 
 A room is a code and a URL, `/r/CODE`. The lobby at `/` lists rooms with
-someone in them in the last 30 minutes (`GET /api/rooms`), makes one
-(`POST /api/rooms`), or opens a code typed in. A room's level persists in
+someone in them, and for 2 minutes after the last one leaves (the seat hold,
+so a dropped player can still find it); a room made but never entered, for 1
+minute (`GET /api/rooms`). It makes one (`POST /api/rooms`), or opens a code
+typed in. After a server restart, rooms with a game in play come back but
+stay off the list until someone opens them again (decided 2026-10-14: the
+list kept showing long-empty rooms, refilled by every restart).
+`ROOM_LISTED_MS` shortens the list times, for checking them. A room's level persists in
 SQLite (`level.room`); a link to a room that once existed still opens it. A
 socket names its room in the handshake and only ever hears that room.
 

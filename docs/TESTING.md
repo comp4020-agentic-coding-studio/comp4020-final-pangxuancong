@@ -50,8 +50,10 @@ also a player, and holds BUILD until they act or the AFK limit passes.
 
 S3, S4, S7–S9 test the pure round state machine and scoring with explicit times.
 `spec/realtime.test.ts` makes its own rooms, so it can run beside people
-playing (it still leaves those rooms in the lobby list for 30 minutes, so
-keep it off the live site). Each socket
+playing (its rooms stay in the lobby list for 2 minutes, so keep it off the
+live site). How long rooms stay listed was checked with
+`ROOM_LISTED_MS=3000` on a throwaway server (2026-10-14): unentered and
+emptied rooms drop off, the link still opens, and a restart lists none. Each socket
 receives a broadcast on its own, so over a real network one client's copy can
 land after the other's: wait for every state a test asserts, never assert a
 second client's view straight after the first one's arrived (2026-10-13). Persistence
