@@ -1,130 +1,97 @@
 # Chain Reaction
 
-<!-- Draft: everything outside "What good means here" was rewritten on
-     2026-10-13 to describe the platformer as it is. It states what the game
-     does; the arguments for why are yours to put in your own words. -->
+<!-- Draft, 2026-10-14, in the shape of the example you shared (one object,
+     then what good means, what was read, what was left out, what is
+     checked). Facts about the game are checked against the code; the
+     reasons are yours to rewrite. The one change to your definition of good
+     is "machine" -> "level". Readings: only what you have told me you read;
+     add the rest yourself. -->
 
 **Build the level together. Survive what you built.**
 
-Chain Reaction is a small real-time multiplayer platformer for up to four
-people. Everyone shares one obstacle course. In each round, every player adds
-one piece to it (or removes one), and then everyone runs it at the same time,
-trying to reach the flag. The level keeps every piece from round to round, so
-it becomes whatever the group made of it.
-
-The idea came from playing *Ultimate Chicken Horse* online with my roommates. In
-that game everyone adds a piece to a shared level, and every piece can help or
-sabotage everyone else. What stayed with me was the moment before a run, when
-we were all watching to see whether our pieces would fit together.
+Four people share one small obstacle course laid out on a wooden table. Each
+round, each of them adds one piece to it (a platform, a spring, a spike, a
+fan, a moving plank, a launcher) or takes one piece away with a bomb, and then
+they all run it at once, trying to reach the flag. Nothing is cleared between
+rounds. By the end of a game the course is a record of everyone who played on
+it: the spring someone placed to help, the spike placed to stop them, the bomb
+that undid both. When a game ends the group can choose to keep building on the
+same level, so a course can outlive the game that started it.
 
 ## What good means here
 
-A good shared machine gives each person responsibility for something small
-while making everyone dependent on the whole.
+The idea came from playing *Ultimate Chicken Horse* online with my roommates.
+In that game everyone adds a piece to a shared level, and every piece can help
+or sabotage everyone else. What stayed with me was the moment before a run,
+when we were all watching to see whether our pieces would fit together.
+
+A good shared level gives each person responsibility for something small while
+making everyone dependent on the whole. Each player adds one piece a round, and
+no piece decides anything alone: whether you reach the flag depends on what
+three other people just did. The game permits help and sabotage without
+deciding which is correct, and scores a round where everyone made it as "too
+simple", so an easy level is not the same as a good one.
 
 Co-presence should be part of the mechanism, not an extra social feature.
-Other people should be visible through what the machine is
-doing: a ramp changing angle, a spring being tuned, a name beside the part
-someone controls. Collaboration happens through the shared object.
+Other people are visible through what the level is doing: a piece landing as
+someone places it, the faint outline of what someone else is still
+considering, small crosses where people fell in the last run, the name of
+whoever placed a piece when you point at it. That is the shape of multi-user, real-time and persistent I
+wanted: not a game with a chat window beside it, but one object everyone
+changes, which keeps every change.
 
-That only works if the machine answers quickly and is worth looking at. A change
-one person makes should reach everyone else within about a second, and the
-visuals and animation have to be crafted and smooth, because motion is how
-players read cause and effect.
+That only works if the level answers quickly and is worth looking at. A change
+one person makes reaches everyone else within about a second, your own
+character moves the instant you press a key, and the motion has to be smooth,
+because motion is how players read cause and effect.
 
-## How a game works
+Things that shaped this:
 
-1. **Pick a room, a character and a map.** The front page lists rooms, or
-   makes a new one with a link to share. A room seats four, one per
-   character; anyone else watches. Before each game the players walk their
-   characters under the sign of the course they want: The Gaps, The Tower or
-   The Swing. If they disagree, the course is drawn by lot, weighted by the
-   votes.
-2. **Build.** Each player gets one action: place a piece (Platform, Spring,
-   Spike, Fan, Moving Platform or Launcher), use the Demolition Bomb on any
-   piece already placed, or skip. Other players see what you are considering
-   while you decide. Once placed, a piece belongs to the level.
-3. **Run.** After a short countdown everyone runs at once. A run ends when
-   every player has reached the flag, died, or left.
-4. **Round end.** Points are shown, and the next build starts on the same
-   level.
+- *Ultimate Chicken Horse* (Clever Endeavour Games, 2016), played online with
+  friends: the shared level, one piece each, help and sabotage from the same
+  parts.
+- Riot Games' engineering blog, on how their online games handle the network:
+  in a real-time game what matters most is how quickly every player sees what
+  is happening, and how well the game hides network trouble from them. That is
+  why each browser runs its own character and only the shared level goes
+  through the server.
 
-A game ends at the end of the round in which someone reaches 4 points, or after
-six rounds. Then everyone walks back to the signs, now with one more: keep
-building on this level in the next game, or a new map. A split goes to the
-wheel again.
-
-## Help or sabotage
-
-The game permits cooperation and sabotage without deciding which is correct. A
-piece can open a route for everyone or close one, and the same Spring can do
-both.
-
-Scoring rewards both sides:
-
-- **+1** for reaching the flag;
-- **+0.2** to the player whose Spike or Launcher kills someone else;
-- **Too simple:** if everyone who ran (two or more) reached the flag, nobody
-  scores that round.
-
-The level may become impossible. There is no check that a path still exists.
-The Demolition Bomb is how players get out of a dead end, and it is an
-ordinary build action.
-
-## The level outlives the round
-
-Pieces stay from round to round. A game can be archived: the next game then
-starts on a copy of the level with every piece still in place. Scores belong to
-one game only, and nothing carries into the next.
-
-During each build, small marks show where players died in the last run.
-
-## Seeing each other
-
-Shared changes reach every open session within about a second, without a
-reload: placements, demolitions, the round's phase, who has built and who is
-still running. During a run, other players move on your screen as they move on
-theirs.
-
-The level is larger than the screen. While you run, the camera follows you, and
-players outside the view show as badges on the edge of the screen. After you
-die or finish, the camera follows someone still running.
-
-## What is enforced and what is judged
-
-Checked automatically (`pnpm check`):
-
-- placements are rejected only when technically invalid;
-- one build action per player per round;
-- rounds move on when players are done, with no gameplay timer;
-- scoring, "too simple" and the 4-point end;
-- each base course can be finished before anyone builds;
-- a placed piece reaches another client within a second and persists.
-
-Judged by playing and crit feedback: whether a piece feels like a real choice,
-whether failure changes what people build next, and whether the movement feels
-fair.
+<!-- TODO(human): name the Riot article(s) you read, with links, and add any
+     other reading on what "good" means at this scale. Only what you have
+     actually read, and what you took from it. -->
 
 ## What I chose not to build
 
-- No chat, accounts, profiles, all-time leaderboards or matchmaking. Rooms
-  only seat four people at a time: no names, passwords or owners.
-- No pathfinding and no "there must always be a path" rule.
-- No collisions between players.
-- No general physics engine. Platformer physics (Phaser Arcade) only.
+No chat, accounts, avatars or profiles: in a room you are only the character
+you chose (Chicken, Big Dog, Pot Horse or Dabai) for as long as you stay. No
+all-time leaderboards or matchmaking: scores live inside one game and nothing
+carries into the next. Rooms exist only to seat four people at a time, with no
+names, passwords or owners; four keeps every piece readable and attributable.
+Anyone else in a room watches and takes a seat when one frees up.
 
-## Where it is now
+No check that a path to the flag still exists. Players may make the level
+harder or impossible; the Demolition Bomb is how they get out of a dead end,
+and it is an ordinary build action, not an admin tool. No collisions between
+players, and no general physics engine: platformer physics only, so a jump
+does the same thing every time.
 
-The game has three courses, six pieces plus the Demolition Bomb, four
-characters (Chicken, Big Dog, Pot Horse and Dabai), scores, and the
-choice after a game to keep building on the level or start a new map. Many rooms can play at once, four players each; a
-dropped connection keeps its seat for two minutes.
+Playing at the same time raises the question of who the round waits for.
+[`docs/decisions/0001-nobody-holds-the-round.md`](docs/decisions/0001-nobody-holds-the-round.md)
+weighs that: someone who leaves or goes idle never holds up the people who are
+still there.
+[`docs/decisions/0002-rooms-and-seats.md`](docs/decisions/0002-rooms-and-seats.md)
+covers rooms, why a character is a seat, and why a dropped connection keeps
+its seat for two minutes.
 
-## Sources
+## What's enforced, what's judged
 
-- *Ultimate Chicken Horse* (Clever Endeavour Games, 2016), played online with
-  friends.
-
-<!-- TODO(human): the brief asks for reading on what "good" means at this scale
-     (the small web, games for a handful of friends, tools for one workshop).
-     Add only what you have actually read, and what you took from it. -->
+`spec/` checks that a placement is refused only when it is technically invalid
+(outside the level, over the start or the flag, on top of another piece), that
+each player gets one build action a round, that rounds move on when players are
+done rather than on a timer, the scoring with "too simple" and the 4-point end,
+that each base course can be finished before anyone builds on it, that a placed
+piece reaches every other open page within a second and is still there on the
+next request, that rooms stay apart, and that a dropped player gets their seat
+back. Whether a piece feels like a real choice, whether failing a run changes
+what people build next, and whether the movement feels fair are not things a
+test can check; that is for the people playing to judge.
